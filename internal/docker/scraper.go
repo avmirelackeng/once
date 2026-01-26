@@ -19,14 +19,10 @@ type Sample struct {
 
 // ScraperSettings configures the docker stats scraper
 type ScraperSettings struct {
-	Interval   time.Duration
 	BufferSize int
 }
 
 func (s ScraperSettings) withDefaults() ScraperSettings {
-	if s.Interval == 0 {
-		s.Interval = 5 * time.Second
-	}
 	if s.BufferSize == 0 {
 		s.BufferSize = 200
 	}
@@ -41,9 +37,6 @@ type Scraper struct {
 	mu        sync.RWMutex
 	apps      map[string]*appData
 	lastError error
-
-	cancel context.CancelFunc
-	done   chan struct{}
 }
 
 type appData struct {
@@ -58,20 +51,6 @@ func NewScraper(ns *Namespace, settings ScraperSettings) *Scraper {
 		settings:  settings,
 		namespace: ns,
 		apps:      make(map[string]*appData),
-	}
-}
-
-func (s *Scraper) Start(ctx context.Context) {
-	ctx, s.cancel = context.WithCancel(ctx)
-	s.done = make(chan struct{})
-
-	go s.run(ctx)
-}
-
-func (s *Scraper) Stop() {
-	if s.cancel != nil {
-		s.cancel()
-		<-s.done
 	}
 }
 
@@ -102,27 +81,7 @@ func (s *Scraper) LastError() error {
 	return s.lastError
 }
 
-// Private
-
-func (s *Scraper) run(ctx context.Context) {
-	defer close(s.done)
-
-	ticker := time.NewTicker(s.settings.Interval)
-	defer ticker.Stop()
-
-	s.scrape(ctx)
-
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-			s.scrape(ctx)
-		}
-	}
-}
-
-func (s *Scraper) scrape(ctx context.Context) {
+func (s *Scraper) Scrape(ctx context.Context) {
 	containers, err := s.findAppContainers(ctx)
 	if err != nil {
 		s.setError(err)

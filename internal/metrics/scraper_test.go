@@ -187,6 +187,5 @@ func TestMetricsScraperSettingsDefaults(t *testing.T) {
 	settings := ScraperSettings{Port: 9090}
 	settings = settings.withDefaults()
 
-	assert.Equal(t, 5_000_000_000, int(settings.Interval))
 	assert.Equal(t, 200, settings.BufferSize)
 }

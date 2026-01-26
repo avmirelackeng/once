@@ -24,14 +24,10 @@ type Sample struct {
 // ScraperSettings configures the metrics scraper
 type ScraperSettings struct {
 	Port       int
-	Interval   time.Duration
 	BufferSize int
 }
 
 func (s ScraperSettings) withDefaults() ScraperSettings {
-	if s.Interval == 0 {
-		s.Interval = 5 * time.Second
-	}
 	if s.BufferSize == 0 {
 		s.BufferSize = 200
 	}
@@ -46,9 +42,6 @@ type MetricsScraper struct {
 	mu        sync.RWMutex
 	services  map[string]*serviceData
 	lastError error
-
-	cancel context.CancelFunc
-	done   chan struct{}
 }
 
 type serviceData struct {
@@ -70,20 +63,6 @@ func NewMetricsScraper(settings ScraperSettings) *MetricsScraper {
 		settings: settings,
 		client:   &http.Client{Timeout: 5 * time.Second},
 		services: make(map[string]*serviceData),
-	}
-}
-
-func (s *MetricsScraper) Start(ctx context.Context) {
-	ctx, s.cancel = context.WithCancel(ctx)
-	s.done = make(chan struct{})
-
-	go s.run(ctx)
-}
-
-func (s *MetricsScraper) Stop() {
-	if s.cancel != nil {
-		s.cancel()
-		<-s.done
 	}
 }
 
@@ -114,27 +93,7 @@ func (s *MetricsScraper) LastError() error {
 	return s.lastError
 }
 
-// Private
-
-func (s *MetricsScraper) run(ctx context.Context) {
-	defer close(s.done)
-
-	ticker := time.NewTicker(s.settings.Interval)
-	defer ticker.Stop()
-
-	s.scrape(ctx)
-
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-			s.scrape(ctx)
-		}
-	}
-}
-
-func (s *MetricsScraper) scrape(ctx context.Context) {
+func (s *MetricsScraper) Scrape(ctx context.Context) {
 	url := fmt.Sprintf("http://127.0.0.1:%d/metrics", s.settings.Port)
 
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)

@@ -2,6 +2,7 @@ package ui
 
 import (
 	"context"
+	"time"
 
 	"charm.land/bubbles/v2/key"
 	tea "charm.land/bubbletea/v2"
@@ -31,6 +32,8 @@ type Component interface {
 }
 
 type NamespaceChangedMsg struct{}
+type scrapeTickMsg struct{}
+type scrapeDoneMsg struct{}
 
 type App struct {
 	namespace      *docker.Namespace
@@ -59,12 +62,10 @@ func NewApp(ns *docker.Namespace) App {
 		Port:       metricsPort,
 		BufferSize: ChartHistoryLength,
 	})
-	scraper.Start(ctx)
 
 	dockerScraper := docker.NewScraper(ns, docker.ScraperSettings{
 		BufferSize: ChartHistoryLength,
 	})
-	dockerScraper.Start(ctx)
 
 	var screen Component
 	if len(apps) > 0 {
@@ -86,7 +87,11 @@ func NewApp(ns *docker.Namespace) App {
 }
 
 func (m App) Init() tea.Cmd {
-	return tea.Batch(m.currentScreen.Init(), m.watchForChanges())
+	return tea.Batch(
+		m.currentScreen.Init(),
+		m.watchForChanges(),
+		m.runScrape(),
+	)
 }
 
 func (m App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -111,6 +116,10 @@ func (m App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.currentScreen, _ = m.currentScreen.Update(m.lastSize)
 		}
 		return m, tea.Batch(m.currentScreen.Init(), m.watchForChanges())
+	case scrapeTickMsg:
+		return m, m.runScrape()
+	case scrapeDoneMsg:
+		return m, tea.Tick(5*time.Second, func(time.Time) tea.Msg { return scrapeTickMsg{} })
 	}
 
 	var cmd tea.Cmd
@@ -134,8 +143,14 @@ func Run(ns *docker.Namespace) error {
 
 func (m App) shutdown() {
 	m.watchCancel()
-	m.scraper.Stop()
-	m.dockerScraper.Stop()
+}
+
+func (m App) runScrape() tea.Cmd {
+	return func() tea.Msg {
+		m.scraper.Scrape(m.watchCtx)
+		m.dockerScraper.Scrape(m.watchCtx)
+		return scrapeDoneMsg{}
+	}
 }
 
 func (m App) switchApp(delta int) (tea.Model, tea.Cmd) {

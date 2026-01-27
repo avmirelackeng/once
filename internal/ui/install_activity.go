@@ -13,7 +13,8 @@ import (
 type installStage int
 
 const (
-	stageDownloading installStage = iota
+	stagePreparing installStage = iota
+	stageDownloading
 	stageStarting
 	stageFinished
 	stageFailed
@@ -56,7 +57,7 @@ func NewInstallActivity(ns *docker.Namespace, imageRef, hostname string) Install
 		imageRef:     imageRef,
 		hostname:     hostname,
 		appName:      appName,
-		stage:        stageDownloading,
+		stage:        stagePreparing,
 		focused:      false,
 		progressChan: make(chan installProgressMsg, 10),
 		doneChan:     make(chan installDoneMsg, 1),
@@ -64,7 +65,7 @@ func NewInstallActivity(ns *docker.Namespace, imageRef, hostname string) Install
 }
 
 func (m InstallActivity) Init() tea.Cmd {
-	return tea.Batch(m.startInstall(), m.waitForProgress())
+	return tea.Batch(m.progressBusy.Init(), m.startInstall(), m.waitForProgress())
 }
 
 func (m InstallActivity) Update(msg tea.Msg) (InstallActivity, tea.Cmd) {
@@ -116,6 +117,8 @@ func (m InstallActivity) Update(msg tea.Msg) (InstallActivity, tea.Cmd) {
 func (m InstallActivity) View() string {
 	var status string
 	switch m.stage {
+	case stagePreparing:
+		status = "Preparing..."
 	case stageDownloading:
 		status = "Downloading..."
 	case stageStarting:
@@ -133,16 +136,16 @@ func (m InstallActivity) View() string {
 
 	var progressView string
 	switch m.stage {
+	case stagePreparing, stageStarting:
+		progressView = lipgloss.NewStyle().
+			Width(m.width).
+			Align(lipgloss.Center).
+			Render(m.progressBusy.View())
 	case stageDownloading:
 		progressView = lipgloss.NewStyle().
 			Width(m.width).
 			Align(lipgloss.Center).
 			Render(m.progressBar.View())
-	case stageStarting:
-		progressView = lipgloss.NewStyle().
-			Width(m.width).
-			Align(lipgloss.Center).
-			Render(m.progressBusy.View())
 	}
 
 	var buttonView string
@@ -201,10 +204,14 @@ func (m InstallActivity) waitForProgress() tea.Cmd {
 func (m InstallActivity) runInstall() {
 	ctx := context.Background()
 
+	m.progressChan <- installProgressMsg{stage: stagePreparing}
+
 	if err := m.namespace.Setup(ctx); err != nil {
 		m.doneChan <- installDoneMsg{err: err}
 		return
 	}
+
+	m.progressChan <- installProgressMsg{stage: stageDownloading, percentage: 0}
 
 	hostname := m.hostname
 	if hostname == "" {

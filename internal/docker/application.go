@@ -50,6 +50,21 @@ func (s ApplicationSettings) URL() string {
 	return "http://" + s.Host
 }
 
+func (s ApplicationSettings) Equal(other ApplicationSettings) bool {
+	if s.Name != other.Name || s.Image != other.Image || s.Host != other.Host || s.DisableTLS != other.DisableTLS {
+		return false
+	}
+	if len(s.EnvVars) != len(other.EnvVars) {
+		return false
+	}
+	for k, v := range s.EnvVars {
+		if other.EnvVars[k] != v {
+			return false
+		}
+	}
+	return true
+}
+
 func (s ApplicationSettings) BuildEnv(secretKeyBase string) []string {
 	env := make([]string, 0, len(s.EnvVars)+2)
 	env = append(env, "SECRET_KEY_BASE="+secretKeyBase)

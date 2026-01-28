@@ -86,6 +86,9 @@ func (m Settings) Update(msg tea.Msg) (Component, tea.Cmd) {
 		return m, func() tea.Msg { return navigateToDashboardMsg{} }
 
 	case SettingsFormSubmitMsg:
+		if msg.Settings.Equal(m.app.Settings) {
+			return m, func() tea.Msg { return navigateToDashboardMsg{} }
+		}
 		m.state = settingsStateDeploying
 		m.app.Settings = msg.Settings
 		m.progress = NewProgressBusy(m.width, lipgloss.Color("#6272a4"))

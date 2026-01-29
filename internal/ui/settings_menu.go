@@ -3,12 +3,29 @@ package ui
 import (
 	"strings"
 
+	"charm.land/bubbles/v2/help"
 	"charm.land/bubbles/v2/key"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 
 	"github.com/basecamp/amar/internal/docker"
 )
+
+type settingsMenuKeyMap struct {
+	Close key.Binding
+}
+
+func (k settingsMenuKeyMap) ShortHelp() []key.Binding {
+	return []key.Binding{k.Close}
+}
+
+func (k settingsMenuKeyMap) FullHelp() [][]key.Binding {
+	return [][]key.Binding{{k.Close}}
+}
+
+var settingsMenuKeys = settingsMenuKeyMap{
+	Close: key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "close")),
+}
 
 type settingsMenuItem int
 
@@ -30,12 +47,14 @@ type SettingsMenu struct {
 	app           *docker.Application
 	selected      settingsMenuItem
 	width, height int
+	help          help.Model
 }
 
 func NewSettingsMenu(app *docker.Application) SettingsMenu {
 	return SettingsMenu{
 		app:      app,
 		selected: menuItemApplication,
+		help:     help.New(),
 	}
 }
 
@@ -74,39 +93,35 @@ func (m SettingsMenu) View() string {
 	boxStyle := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(Colors.Border).
-		Padding(1, 2)
+		Padding(1, 4)
 
 	titleStyle := lipgloss.NewStyle().
 		Bold(true).
 		Foreground(Colors.Primary).
 		MarginBottom(1)
 
-	itemStyle := lipgloss.NewStyle().
-		PaddingLeft(2)
+	itemStyle := lipgloss.NewStyle()
 
-	selectedStyle := itemStyle.
-		Foreground(Colors.Focused).
-		Bold(true)
+	selectedStyle := lipgloss.NewStyle().Reverse(true)
 
-	helpStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("#6272a4")).
-		MarginTop(1).
-		Align(lipgloss.Center)
+	keyStyle := lipgloss.NewStyle().Foreground(Colors.Border)
 
 	title := titleStyle.Render("Settings")
 
 	items := []string{
-		m.renderItem("[A]pplication", menuItemApplication, itemStyle, selectedStyle),
-		m.renderItem("[E]mail", menuItemEmail, itemStyle, selectedStyle),
-		m.renderItem("En[v]ironment", menuItemEnvironment, itemStyle, selectedStyle),
+		m.renderItem("Application", "a", menuItemApplication, itemStyle, selectedStyle, keyStyle),
+		m.renderItem("Email", "e", menuItemEmail, itemStyle, selectedStyle, keyStyle),
+		m.renderItem("Environment", "v", menuItemEnvironment, itemStyle, selectedStyle, keyStyle),
 	}
 
-	help := helpStyle.Render("esc to close")
+	helpView := m.help.View(settingsMenuKeys)
+	itemWidth := 14 // label padding (13) + shortcut (1)
+	helpLine := lipgloss.NewStyle().MarginTop(1).Width(itemWidth).Align(lipgloss.Center).Render(helpView)
 
-	content := lipgloss.JoinVertical(lipgloss.Center,
+	content := lipgloss.JoinVertical(lipgloss.Left,
 		title,
 		strings.Join(items, "\n"),
-		help,
+		helpLine,
 	)
 
 	return boxStyle.Render(content)
@@ -114,11 +129,15 @@ func (m SettingsMenu) View() string {
 
 // Private
 
-func (m SettingsMenu) renderItem(label string, item settingsMenuItem, normal, selected lipgloss.Style) string {
+func (m SettingsMenu) renderItem(label, shortcut string, item settingsMenuItem, normalStyle, selectedStyle, keyStyle lipgloss.Style) string {
+	// Pad to align shortcut keys (longest label is "Environment" at 11 chars)
+	padding := strings.Repeat(" ", 13-len(label))
+	styledKey := keyStyle.Render(shortcut)
+
 	if m.selected == item {
-		return selected.Render("> " + label)
+		return selectedStyle.Render(label) + padding + styledKey
 	}
-	return normal.Render("  " + label)
+	return normalStyle.Render(label) + padding + styledKey
 }
 
 func (m SettingsMenu) selectCurrent() tea.Cmd {

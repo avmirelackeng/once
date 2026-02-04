@@ -70,10 +70,10 @@ go test -v -run TestName ./internal/...
 - Private functions that are not methods of a type should go last in the file, and should be separated with a `// Helpers` comment.
 - Prefer modern Go constructs where possible (for example, ranging over numbers is better than a for loop). If the LSP suggests there is an option to modernize something you should generally do so.
 - Write tests to cover changes where possible, but don't go overboard trying to cover every single case. Prefer using helper functions (including functions defined locally inside the test) over table-driven tests, except in cases where the latter would be more readable.
-- When writing tests, use github.com/stretchr/testify's assert and require packages, to make test conditions more readable.
+- When writing tests, use github.com/stretchr/testify's assert and require packages, to make test conditions more readable. Don't add descriptions to the assertions unless they would add meaningful context over what the default failure message would be).
 - Regularly check your work with the linter and LSP to ensure it follows conventions, and run tests as needed to ensure they pass.
 - Consider opportunities to refactor large methods into smaller pieces, and spot opportunities where it's worth extracting functionality into a new type. But do not go overboard with this.
 
 ## Agent behaviour
 
-- Never make commits, or push changes to remotes. I will take care of this myself. You may, however, do any read-only Git operations that you like, such as checking for upstream changes, reading history.
+- Don't make commits, or push changes to remotes. I will take care of this myself.

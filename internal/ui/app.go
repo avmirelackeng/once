@@ -52,6 +52,7 @@ const (
 	SettingsSectionApplication SettingsSectionType = iota
 	SettingsSectionEmail
 	SettingsSectionEnvironment
+	SettingsSectionResources
 )
 
 type App struct {

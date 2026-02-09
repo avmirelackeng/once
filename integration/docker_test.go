@@ -418,6 +418,30 @@ func TestRestoreExistingAppFails(t *testing.T) {
 
 // Helpers
 
+func TestContainerResources(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+
+	ns, err := docker.NewNamespace("once-res-test")
+	require.NoError(t, err)
+	defer ns.Teardown(ctx, true)
+
+	require.NoError(t, ns.EnsureNetwork(ctx))
+	require.NoError(t, ns.Proxy().Boot(ctx, getProxyPorts(t)))
+
+	app := ns.AddApplication(docker.ApplicationSettings{
+		Name:      "campfire",
+		Image:     "ghcr.io/basecamp/once-campfire:main",
+		Resources: docker.ContainerResources{CPUs: 1, MemoryMB: 1024},
+	})
+	require.NoError(t, app.Deploy(ctx, nil))
+
+	containerName, err := app.ContainerName(ctx)
+	require.NoError(t, err)
+
+	assertContainerResources(t, ctx, containerName, 1e9, 1024*1024*1024)
+}
+
 func getFreePort(t *testing.T) int {
 	t.Helper()
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
@@ -449,6 +473,19 @@ func assertContainerRunning(t *testing.T, ctx context.Context, name string, expe
 	} else {
 		assert.False(t, info.State.Running, "container should be stopped")
 	}
+}
+
+func assertContainerResources(t *testing.T, ctx context.Context, name string, expectedNanoCPUs, expectedMemory int64) {
+	t.Helper()
+	c, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
+	require.NoError(t, err)
+	defer c.Close()
+
+	info, err := c.ContainerInspect(ctx, name)
+	require.NoError(t, err)
+
+	assert.Equal(t, expectedNanoCPUs, info.HostConfig.NanoCPUs)
+	assert.Equal(t, expectedMemory, info.HostConfig.Memory)
 }
 
 func assertContainerLogConfig(t *testing.T, ctx context.Context, name string) {

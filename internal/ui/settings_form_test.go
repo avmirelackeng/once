@@ -219,6 +219,91 @@ func TestSettingsFormEmail_Cancel(t *testing.T) {
 	assert.True(t, ok, "expected SettingsSectionCancelMsg, got %T", msg)
 }
 
+func TestSettingsFormResources_InitialState(t *testing.T) {
+	settings := docker.ApplicationSettings{
+		Resources: docker.ContainerResources{
+			CPUs:     2,
+			MemoryMB: 512,
+		},
+	}
+	form := NewSettingsFormResources(settings)
+
+	assert.Equal(t, resourcesFieldCPU, form.focused)
+	assert.Equal(t, "2", form.cpuInput.Value())
+	assert.Equal(t, "512", form.memoryInput.Value())
+}
+
+func TestSettingsFormResources_InitialState_ZeroValues(t *testing.T) {
+	form := NewSettingsFormResources(docker.ApplicationSettings{})
+
+	assert.Equal(t, resourcesFieldCPU, form.focused)
+	assert.Equal(t, "", form.cpuInput.Value())
+	assert.Equal(t, "", form.memoryInput.Value())
+}
+
+func TestSettingsFormResources_TabNavigation(t *testing.T) {
+	form := NewSettingsFormResources(docker.ApplicationSettings{})
+	assert.Equal(t, resourcesFieldCPU, form.focused)
+
+	form = resourcesPressTab(form)
+	assert.Equal(t, resourcesFieldMemory, form.focused)
+
+	form = resourcesPressTab(form)
+	assert.Equal(t, resourcesFieldDoneButton, form.focused)
+
+	form = resourcesPressTab(form)
+	assert.Equal(t, resourcesFieldCancelButton, form.focused)
+
+	form = resourcesPressTab(form)
+	assert.Equal(t, resourcesFieldCPU, form.focused)
+}
+
+func TestSettingsFormResources_Submit(t *testing.T) {
+	form := NewSettingsFormResources(docker.ApplicationSettings{Name: "myapp"})
+
+	form = resourcesTypeText(form, "2")
+	form = resourcesPressTab(form)
+	form = resourcesTypeText(form, "1024")
+
+	form.focused = resourcesFieldDoneButton
+	section, cmd := form.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	form = section.(SettingsFormResources)
+	require.NotNil(t, cmd)
+
+	msg := cmd()
+	submitMsg, ok := msg.(SettingsSectionSubmitMsg)
+	require.True(t, ok, "expected SettingsSectionSubmitMsg, got %T", msg)
+	assert.Equal(t, "myapp", submitMsg.Settings.Name)
+	assert.Equal(t, 2, submitMsg.Settings.Resources.CPUs)
+	assert.Equal(t, 1024, submitMsg.Settings.Resources.MemoryMB)
+}
+
+func TestSettingsFormResources_SubmitBlank(t *testing.T) {
+	form := NewSettingsFormResources(docker.ApplicationSettings{})
+
+	form.focused = resourcesFieldDoneButton
+	_, cmd := form.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	require.NotNil(t, cmd)
+
+	msg := cmd()
+	submitMsg, ok := msg.(SettingsSectionSubmitMsg)
+	require.True(t, ok, "expected SettingsSectionSubmitMsg, got %T", msg)
+	assert.Equal(t, 0, submitMsg.Settings.Resources.CPUs)
+	assert.Equal(t, 0, submitMsg.Settings.Resources.MemoryMB)
+}
+
+func TestSettingsFormResources_Cancel(t *testing.T) {
+	form := NewSettingsFormResources(docker.ApplicationSettings{})
+
+	form.focused = resourcesFieldCancelButton
+	_, cmd := form.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	require.NotNil(t, cmd)
+
+	msg := cmd()
+	_, ok := msg.(SettingsSectionCancelMsg)
+	assert.True(t, ok, "expected SettingsSectionCancelMsg, got %T", msg)
+}
+
 // Helpers
 
 func applicationTypeText(form SettingsFormApplication, text string) SettingsFormApplication {
@@ -253,4 +338,17 @@ func applicationPressSpace(form SettingsFormApplication) SettingsFormApplication
 func emailPressTab(form SettingsFormEmail) SettingsFormEmail {
 	section, _ := form.Update(tea.KeyPressMsg{Code: tea.KeyTab})
 	return section.(SettingsFormEmail)
+}
+
+func resourcesPressTab(form SettingsFormResources) SettingsFormResources {
+	section, _ := form.Update(tea.KeyPressMsg{Code: tea.KeyTab})
+	return section.(SettingsFormResources)
+}
+
+func resourcesTypeText(form SettingsFormResources, text string) SettingsFormResources {
+	for _, r := range text {
+		section, _ := form.Update(tea.KeyPressMsg{Code: r, Text: string(r)})
+		form = section.(SettingsFormResources)
+	}
+	return form
 }

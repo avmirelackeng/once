@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestNameFromImageRef(t *testing.T) {
@@ -41,4 +42,30 @@ func TestBuildEnvWithoutSMTP(t *testing.T) {
 	for _, e := range env {
 		assert.NotContains(t, e, "SMTP_")
 	}
+}
+
+func TestContainerResourcesEqualDiffers(t *testing.T) {
+	base := ApplicationSettings{Name: "app", Resources: ContainerResources{CPUs: 1, MemoryMB: 512}}
+
+	differentCPUs := ApplicationSettings{Name: "app", Resources: ContainerResources{CPUs: 2, MemoryMB: 512}}
+	assert.False(t, base.Equal(differentCPUs))
+
+	differentMemory := ApplicationSettings{Name: "app", Resources: ContainerResources{CPUs: 1, MemoryMB: 1024}}
+	assert.False(t, base.Equal(differentMemory))
+
+	zeroResources := ApplicationSettings{Name: "app"}
+	assert.False(t, base.Equal(zeroResources))
+}
+
+func TestContainerResourcesMarshalRoundTrip(t *testing.T) {
+	original := ApplicationSettings{
+		Name:      "app",
+		Image:     "img:latest",
+		Resources: ContainerResources{CPUs: 2, MemoryMB: 512},
+	}
+	restored, err := UnmarshalApplicationSettings(original.Marshal())
+	require.NoError(t, err)
+	assert.Equal(t, 2, restored.Resources.CPUs)
+	assert.Equal(t, 512, restored.Resources.MemoryMB)
+	assert.True(t, original.Equal(restored))
 }

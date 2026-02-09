@@ -37,10 +37,6 @@ type SMTPSettings struct {
 	From     string `json:"f,omitempty"`
 }
 
-func (s SMTPSettings) Equal(other SMTPSettings) bool {
-	return s.Server == other.Server && s.Port == other.Port && s.Username == other.Username && s.Password == other.Password && s.From == other.From
-}
-
 func (s SMTPSettings) BuildEnv() []string {
 	if s.Server == "" {
 		return nil
@@ -54,13 +50,19 @@ func (s SMTPSettings) BuildEnv() []string {
 	}
 }
 
+type ContainerResources struct {
+	CPUs     int `json:"cpus,omitempty"`
+	MemoryMB int `json:"mem,omitempty"`
+}
+
 type ApplicationSettings struct {
-	Name       string            `json:"n"`
-	Image      string            `json:"i"`
-	Host       string            `json:"h"`
-	DisableTLS bool              `json:"dt"`
-	EnvVars    map[string]string `json:"env"`
-	SMTP       SMTPSettings      `json:"sm"`
+	Name       string             `json:"n"`
+	Image      string             `json:"i"`
+	Host       string             `json:"h"`
+	DisableTLS bool               `json:"dt"`
+	EnvVars    map[string]string  `json:"env"`
+	SMTP       SMTPSettings       `json:"sm"`
+	Resources  ContainerResources  `json:"res"`
 }
 
 func UnmarshalApplicationSettings(s string) (ApplicationSettings, error) {
@@ -92,7 +94,10 @@ func (s ApplicationSettings) Equal(other ApplicationSettings) bool {
 	if s.Name != other.Name || s.Image != other.Image || s.Host != other.Host || s.DisableTLS != other.DisableTLS {
 		return false
 	}
-	if !s.SMTP.Equal(other.SMTP) {
+	if s.Resources != other.Resources {
+		return false
+	}
+	if s.SMTP != other.SMTP {
 		return false
 	}
 	if len(s.EnvVars) != len(other.EnvVars) {
@@ -342,19 +347,31 @@ func (a *Application) deployWithVolume(ctx context.Context, vol *ApplicationVolu
 
 	env := a.Settings.BuildEnv(vol.SecretKeyBase())
 
-	resp, err := a.namespace.client.ContainerCreate(ctx,
-		a.containerConfig(env),
-		&container.HostConfig{
-			RestartPolicy: container.RestartPolicy{Name: container.RestartPolicyAlways},
-			LogConfig:     ContainerLogConfig(),
-			Mounts: []mount.Mount{
-				{
-					Type:   mount.TypeVolume,
-					Source: vol.Name(),
-					Target: "/rails/storage",
-				},
+	hostConfig := &container.HostConfig{
+		RestartPolicy: container.RestartPolicy{Name: container.RestartPolicyAlways},
+		LogConfig:     ContainerLogConfig(),
+		Mounts: []mount.Mount{
+			{
+				Type:   mount.TypeVolume,
+				Source: vol.Name(),
+				Target: "/rails/storage",
 			},
 		},
+	}
+	hostConfig.Resources = container.Resources{
+		Memory: int64(a.Settings.Resources.MemoryMB) * 1024 * 1024,
+	}
+	if cpus := a.Settings.Resources.CPUs; cpus > 0 {
+		if cpus == 1 {
+			hostConfig.CpusetCpus = "0"
+		} else {
+			hostConfig.CpusetCpus = fmt.Sprintf("0-%d", cpus-1)
+		}
+	}
+
+	resp, err := a.namespace.client.ContainerCreate(ctx,
+		a.containerConfig(env),
+		hostConfig,
 		&network.NetworkingConfig{
 			EndpointsConfig: map[string]*network.EndpointSettings{
 				a.namespace.name: {},

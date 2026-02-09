@@ -33,6 +33,7 @@ const (
 	menuItemApplication settingsMenuItem = iota
 	menuItemEmail
 	menuItemEnvironment
+	menuItemResources
 	menuItemCount
 )
 
@@ -81,6 +82,8 @@ func (m SettingsMenu) Update(msg tea.Msg) (SettingsMenu, tea.Cmd) {
 			return m, m.selectSection(SettingsSectionEmail)
 		case key.Matches(msg, key.NewBinding(key.WithKeys("v"))):
 			return m, m.selectSection(SettingsSectionEnvironment)
+		case key.Matches(msg, key.NewBinding(key.WithKeys("r"))):
+			return m, m.selectSection(SettingsSectionResources)
 		case key.Matches(msg, key.NewBinding(key.WithKeys("esc"))):
 			return m, func() tea.Msg { return SettingsMenuCloseMsg{} }
 		}
@@ -112,6 +115,7 @@ func (m SettingsMenu) View() string {
 		m.renderItem("Application", "a", menuItemApplication, itemStyle, selectedStyle, keyStyle),
 		m.renderItem("Email", "e", menuItemEmail, itemStyle, selectedStyle, keyStyle),
 		m.renderItem("Environment", "v", menuItemEnvironment, itemStyle, selectedStyle, keyStyle),
+		m.renderItem("Resources", "r", menuItemResources, itemStyle, selectedStyle, keyStyle),
 	}
 
 	helpView := m.help.View(settingsMenuKeys)
@@ -149,6 +153,8 @@ func (m SettingsMenu) selectCurrent() tea.Cmd {
 		section = SettingsSectionEmail
 	case menuItemEnvironment:
 		section = SettingsSectionEnvironment
+	case menuItemResources:
+		section = SettingsSectionResources
 	}
 	return m.selectSection(section)
 }

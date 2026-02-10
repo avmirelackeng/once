@@ -1,11 +1,13 @@
 package ui
 
 import (
+	"fmt"
 	"strings"
 
 	"charm.land/bubbles/v2/key"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	zone "github.com/lrstanley/bubblezone/v2"
 
 	"github.com/basecamp/once/internal/docker"
 )
@@ -47,14 +49,14 @@ type SettingsMenu struct {
 	app           *docker.Application
 	selected      settingsMenuItem
 	width, height int
-	help          Help
+	help Help
 }
 
 func NewSettingsMenu(app *docker.Application) SettingsMenu {
 	return SettingsMenu{
 		app:      app,
 		selected: menuItemApplication,
-		help:     NewHelp(),
+		help: NewHelp(),
 	}
 }
 
@@ -68,6 +70,14 @@ func (m SettingsMenu) Update(msg tea.Msg) (SettingsMenu, tea.Cmd) {
 		m.width, m.height = msg.Width, msg.Height
 
 	case tea.MouseClickMsg:
+		if msg.Button == tea.MouseLeft {
+			for i := range menuItemCount {
+				if zi := zone.Get(m.zoneID(settingsMenuItem(i))); zi != nil && zi.InBounds(msg) {
+					m.selected = settingsMenuItem(i)
+					return m, m.selectCurrent()
+				}
+			}
+		}
 		if cmd := m.help.Update(msg, settingsMenuKeys); cmd != nil {
 			return m, cmd
 		}
@@ -142,10 +152,17 @@ func (m SettingsMenu) renderItem(label, shortcut string, item settingsMenuItem, 
 	padding := strings.Repeat(" ", 13-len(label))
 	styledKey := keyStyle.Render(shortcut)
 
+	var line string
 	if m.selected == item {
-		return selectedStyle.Render(label) + padding + styledKey
+		line = selectedStyle.Render(label) + padding + styledKey
+	} else {
+		line = normalStyle.Render(label) + padding + styledKey
 	}
-	return normalStyle.Render(label) + padding + styledKey
+	return zone.Mark(m.zoneID(item), line)
+}
+
+func (m SettingsMenu) zoneID(item settingsMenuItem) string {
+	return fmt.Sprintf("settings_%d", item)
 }
 
 func (m SettingsMenu) selectCurrent() tea.Cmd {

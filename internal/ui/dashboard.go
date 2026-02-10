@@ -298,6 +298,12 @@ func (m Dashboard) Update(msg tea.Msg) (Component, tea.Cmd) {
 		}
 	}
 
+	if m.showingMenu {
+		var cmd tea.Cmd
+		m.settingsMenu, cmd = m.settingsMenu.Update(msg)
+		cmds = append(cmds, cmd)
+	}
+
 	return m, tea.Batch(cmds...)
 }
 

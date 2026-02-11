@@ -1,6 +1,10 @@
 package docker
 
 import (
+	"context"
+	"errors"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -68,4 +72,71 @@ func TestContainerResourcesMarshalRoundTrip(t *testing.T) {
 	assert.Equal(t, 2, restored.Resources.CPUs)
 	assert.Equal(t, 512, restored.Resources.MemoryMB)
 	assert.True(t, original.Equal(restored))
+}
+
+func TestVerifyHTTP_Success(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	app := &Application{
+		Settings: ApplicationSettings{Host: server.Listener.Addr().String(), DisableTLS: true},
+	}
+
+	err := app.VerifyHTTP(context.Background())
+	assert.NoError(t, err)
+}
+
+func TestVerifyHTTP_RedirectToSuccess(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/" {
+			http.Redirect(w, r, "/home", http.StatusFound)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	app := &Application{
+		Settings: ApplicationSettings{Host: server.Listener.Addr().String(), DisableTLS: true},
+	}
+
+	err := app.VerifyHTTP(context.Background())
+	assert.NoError(t, err)
+}
+
+func TestVerifyHTTP_ServerError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer server.Close()
+
+	app := &Application{
+		Settings: ApplicationSettings{Host: server.Listener.Addr().String(), DisableTLS: true},
+	}
+
+	err := app.VerifyHTTP(context.Background())
+	require.Error(t, err)
+	assert.ErrorIs(t, err, ErrVerificationFailed)
+	assert.Contains(t, err.Error(), "unexpected status 500")
+}
+
+func TestVerifyHTTP_Unreachable(t *testing.T) {
+	app := &Application{
+		Settings: ApplicationSettings{Host: "127.0.0.1:1", DisableTLS: true},
+	}
+
+	err := app.VerifyHTTP(context.Background())
+	require.Error(t, err)
+	assert.True(t, errors.Is(err, ErrVerificationFailed))
+}
+
+func TestVerifyHTTP_NoHost(t *testing.T) {
+	app := &Application{
+		Settings: ApplicationSettings{},
+	}
+
+	err := app.VerifyHTTP(context.Background())
+	assert.NoError(t, err)
 }

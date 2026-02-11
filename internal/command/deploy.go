@@ -43,7 +43,7 @@ func (d *DeployCommand) run(ns *docker.Namespace, cmd *cobra.Command, args []str
 	}
 
 	if err := ns.Setup(ctx); err != nil {
-		return fmt.Errorf("setting up namespace: %w", err)
+		return fmt.Errorf("%w: %w", docker.ErrSetupFailed, err)
 	}
 
 	app := ns.AddApplication(docker.ApplicationSettings{
@@ -64,7 +64,13 @@ func (d *DeployCommand) run(ns *docker.Namespace, cmd *cobra.Command, args []str
 	}
 
 	if err := app.Deploy(ctx, progress); err != nil {
-		return fmt.Errorf("deploying: %w", err)
+		return fmt.Errorf("%w: %w", docker.ErrDeployFailed, err)
+	}
+
+	fmt.Println("Verifying...")
+	if err := app.VerifyHTTP(ctx); err != nil {
+		app.Destroy(ctx, true)
+		return err
 	}
 
 	fmt.Printf("Deployed %s\n", name)

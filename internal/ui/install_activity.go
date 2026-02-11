@@ -2,6 +2,7 @@ package ui
 
 import (
 	"context"
+	"fmt"
 
 	"charm.land/bubbles/v2/key"
 	tea "charm.land/bubbletea/v2"
@@ -17,6 +18,7 @@ const (
 	stagePreparing installStage = iota
 	stageDownloading
 	stageStarting
+	stageVerifying
 	stageFinished
 	stageFailed
 )
@@ -94,7 +96,7 @@ func (m InstallActivity) Update(msg tea.Msg) (InstallActivity, tea.Cmd) {
 		m.stage = msg.stage
 		m.percentage = msg.percentage
 		m.progressBar.Current = float64(msg.percentage)
-		if msg.stage == stageStarting {
+		if msg.stage == stageStarting || msg.stage == stageVerifying {
 			return m, tea.Batch(m.progressBusy.Init(), m.waitForProgress())
 		}
 		return m, m.waitForProgress()
@@ -127,6 +129,8 @@ func (m InstallActivity) View() string {
 		status = "Downloading..."
 	case stageStarting:
 		status = "Starting..."
+	case stageVerifying:
+		status = "Verifying..."
 	case stageFinished:
 		status = "Installation complete!"
 	case stageFailed:
@@ -137,7 +141,7 @@ func (m InstallActivity) View() string {
 
 	var progressView string
 	switch m.stage {
-	case stagePreparing, stageStarting:
+	case stagePreparing, stageStarting, stageVerifying:
 		progressView = Styles.CenteredLine(m.width, m.progressBusy.View())
 	case stageDownloading:
 		progressView = Styles.CenteredLine(m.width, m.progressBar.View())
@@ -208,7 +212,7 @@ func (m InstallActivity) runInstall() {
 	m.progressChan <- installProgressMsg{stage: stagePreparing}
 
 	if err := m.namespace.Setup(ctx); err != nil {
-		m.doneChan <- installDoneMsg{err: err}
+		m.doneChan <- installDoneMsg{err: fmt.Errorf("%w: %w", docker.ErrSetupFailed, err)}
 		return
 	}
 
@@ -235,6 +239,18 @@ func (m InstallActivity) runInstall() {
 		}
 	}
 
-	err := app.Deploy(ctx, progress)
-	m.doneChan <- installDoneMsg{app: app, err: err}
+	if err := app.Deploy(ctx, progress); err != nil {
+		m.doneChan <- installDoneMsg{err: fmt.Errorf("%w: %w", docker.ErrDeployFailed, err)}
+		return
+	}
+
+	m.progressChan <- installProgressMsg{stage: stageVerifying}
+
+	if err := app.VerifyHTTP(ctx); err != nil {
+		app.Destroy(ctx, true)
+		m.doneChan <- installDoneMsg{err: err}
+		return
+	}
+
+	m.doneChan <- installDoneMsg{app: app}
 }

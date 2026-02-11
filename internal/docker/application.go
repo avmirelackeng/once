@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"strings"
 	"time"
 
@@ -23,8 +24,12 @@ import (
 )
 
 var (
-	ErrApplicationExists = errors.New("application already exists")
-	ErrInvalidBackup     = errors.New("invalid backup archive")
+	ErrApplicationExists    = errors.New("application already exists")
+	ErrInvalidBackup        = errors.New("invalid backup archive")
+	ErrSetupFailed        = errors.New("setup failed")
+	ErrPullFailed         = errors.New("pull failed")
+	ErrDeployFailed       = errors.New("deploy failed")
+	ErrVerificationFailed = errors.New("verification failed")
 )
 
 const BackupDataDir = "data"
@@ -279,6 +284,31 @@ func (a *Application) Backup(ctx context.Context, w io.Writer) error {
 	return nil
 }
 
+func (a *Application) VerifyHTTP(ctx context.Context) error {
+	url := a.Settings.URL()
+	if url == "" {
+		return nil
+	}
+
+	client := &http.Client{Timeout: 30 * time.Second}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return fmt.Errorf("%w: %w", ErrVerificationFailed, err)
+	}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return fmt.Errorf("%w: %w", ErrVerificationFailed, err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode > 299 {
+		return fmt.Errorf("%w: unexpected status %d from %s", ErrVerificationFailed, resp.StatusCode, url)
+	}
+
+	return nil
+}
+
 func (a *Application) Destroy(ctx context.Context, destroyVolumes bool) error {
 	prefix := fmt.Sprintf("%s-app-%s-", a.namespace.name, a.Settings.Name)
 
@@ -317,14 +347,14 @@ func (a *Application) Destroy(ctx context.Context, destroyVolumes bool) error {
 func (a *Application) pullImage(ctx context.Context, progress DeployProgressCallback) error {
 	reader, err := a.namespace.client.ImagePull(ctx, a.Settings.Image, image.PullOptions{})
 	if err != nil {
-		return fmt.Errorf("pulling image: %w", err)
+		return fmt.Errorf("%w: %w", ErrPullFailed, err)
 	}
 	defer reader.Close()
 
 	if progress != nil {
 		tracker := newPullProgressTracker(progress)
 		if err := tracker.Track(reader); err != nil {
-			return fmt.Errorf("tracking pull progress: %w", err)
+			return fmt.Errorf("%w: %w", ErrPullFailed, err)
 		}
 	} else {
 		_, _ = io.Copy(io.Discard, reader)

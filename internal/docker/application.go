@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -303,23 +304,34 @@ func (a *Application) BackupName() string {
 func (a *Application) BackupToFile(ctx context.Context, dir string, name string) error {
 	uid, gid, err := prepareBackupDir(dir)
 	if err != nil {
+		slog.Error("Failed to create backup directory", "directory", dir, "error", err)
 		return err
 	}
 
 	filePath := filepath.Join(dir, name)
 	file, err := os.Create(filePath)
 	if err != nil {
+		slog.Error("Failed to create backup file", "filename", filePath, "error", err)
 		return fmt.Errorf("creating backup file: %w", err)
 	}
 	defer file.Close()
 
 	if err := os.Chown(filePath, uid, gid); err != nil {
+		slog.Error("Failed to set backup file ownership", "filename", filePath, "error", err)
 		return fmt.Errorf("setting backup file ownership: %w", err)
 	}
 
-	backupErr := a.backupToWriter(ctx, file)
-	a.saveOperationResult(ctx, func(s *State) { s.RecordBackup(a.Settings.Name, backupErr) })
-	return backupErr
+	err = a.backupToWriter(ctx, file)
+	a.saveOperationResult(ctx, func(s *State) { s.RecordBackup(a.Settings.Name, err) })
+
+	if err != nil {
+		slog.Error("Failed to generate backup", "filename", filePath, "error", err)
+		return err
+	}
+
+	slog.Info("Created backup file", "filename", filePath)
+
+	return nil
 }
 
 func (a *Application) VerifyHTTP(ctx context.Context) error {
@@ -371,8 +383,12 @@ func (a *Application) TrimBackups() error {
 		}
 
 		if t.Before(cutoff) {
-			if err := os.Remove(filepath.Join(a.Settings.Backup.Path, entry.Name())); err != nil {
+			filename := filepath.Join(a.Settings.Backup.Path, entry.Name())
+			if err := os.Remove(filename); err != nil {
+				slog.Error("Failed to remove expired backup file", "filename", filename, "error", err)
 				errs = append(errs, err)
+			} else {
+				slog.Info("Removed expired backup file", "filename", filename)
 			}
 		}
 	}

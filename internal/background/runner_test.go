@@ -2,7 +2,6 @@ package background
 
 import (
 	"context"
-	"log/slog"
 	"testing"
 	"time"
 
@@ -10,7 +9,7 @@ import (
 )
 
 func TestRunnerShutdown(t *testing.T) {
-	runner := NewRunner("test", slog.Default())
+	runner := NewRunner("test")
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()

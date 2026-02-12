@@ -1,8 +1,6 @@
 package command
 
 import (
-	"log/slog"
-	"os"
 	"os/signal"
 	"syscall"
 
@@ -40,8 +38,7 @@ func (b *BackgroundRunCommand) run(cmd *cobra.Command, args []string) error {
 
 	namespace, _ := cmd.Root().PersistentFlags().GetString("namespace")
 
-	logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
-	runner := background.NewRunner(namespace, logger)
+	runner := background.NewRunner(namespace)
 
 	return runner.Run(ctx)
 }

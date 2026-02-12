@@ -336,6 +336,14 @@ func (a *Application) VerifyHTTP(ctx context.Context) error {
 	return nil
 }
 
+func (a *Application) Remove(ctx context.Context, removeData bool) error {
+	if err := a.namespace.Proxy().Remove(ctx, a.Settings.Name); err != nil {
+		return fmt.Errorf("removing from proxy: %w", err)
+	}
+
+	return a.Destroy(ctx, removeData)
+}
+
 func (a *Application) Destroy(ctx context.Context, destroyVolumes bool) error {
 	prefix := fmt.Sprintf("%s-app-%s-", a.namespace.name, a.Settings.Name)
 

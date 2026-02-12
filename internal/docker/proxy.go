@@ -161,6 +161,10 @@ func (p *Proxy) Exec(ctx context.Context, cmd []string) error {
 	return err
 }
 
+func (p *Proxy) Remove(ctx context.Context, appName string) error {
+	return p.Exec(ctx, []string{"kamal-proxy", "remove", appName})
+}
+
 func (p *Proxy) Deploy(ctx context.Context, opts DeployOptions) error {
 	args := []string{"kamal-proxy", "deploy", opts.AppName, "--target", opts.Target}
 

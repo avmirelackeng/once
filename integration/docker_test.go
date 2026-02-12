@@ -429,6 +429,62 @@ func TestRestoreExistingAppFails(t *testing.T) {
 	assert.ErrorIs(t, err, docker.ErrApplicationExists)
 }
 
+func TestRemoveApplication(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+
+	ns, err := docker.NewNamespace("once-remove-test")
+	require.NoError(t, err)
+	defer ns.Teardown(ctx, true)
+
+	require.NoError(t, ns.EnsureNetwork(ctx))
+	require.NoError(t, ns.Proxy().Boot(ctx, getProxyPorts(t)))
+
+	app := ns.AddApplication(docker.ApplicationSettings{
+		Name:  "removeapp",
+		Image: "ghcr.io/basecamp/once-campfire:main",
+	})
+	require.NoError(t, app.Deploy(ctx, nil))
+
+	containerPrefix := "once-remove-test-app-removeapp-"
+	assert.Equal(t, 1, countContainers(t, ctx, containerPrefix))
+
+	require.NoError(t, app.Remove(ctx, false))
+
+	assert.Equal(t, 0, countContainers(t, ctx, containerPrefix))
+
+	_, err = docker.FindVolume(ctx, ns, "removeapp")
+	assert.NoError(t, err, "volume should still exist")
+}
+
+func TestRemoveApplicationWithData(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+
+	ns, err := docker.NewNamespace("once-removedata-test")
+	require.NoError(t, err)
+	defer ns.Teardown(ctx, true)
+
+	require.NoError(t, ns.EnsureNetwork(ctx))
+	require.NoError(t, ns.Proxy().Boot(ctx, getProxyPorts(t)))
+
+	app := ns.AddApplication(docker.ApplicationSettings{
+		Name:  "removeapp",
+		Image: "ghcr.io/basecamp/once-campfire:main",
+	})
+	require.NoError(t, app.Deploy(ctx, nil))
+
+	containerPrefix := "once-removedata-test-app-removeapp-"
+	assert.Equal(t, 1, countContainers(t, ctx, containerPrefix))
+
+	require.NoError(t, app.Remove(ctx, true))
+
+	assert.Equal(t, 0, countContainers(t, ctx, containerPrefix))
+
+	_, err = docker.FindVolume(ctx, ns, "removeapp")
+	assert.ErrorIs(t, err, docker.ErrVolumeNotFound)
+}
+
 // Helpers
 
 func TestContainerResources(t *testing.T) {

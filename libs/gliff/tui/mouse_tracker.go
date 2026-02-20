@@ -5,6 +5,8 @@ import (
 	"strings"
 
 	"github.com/mattn/go-runewidth"
+
+	"github.com/basecamp/gliff/ansi"
 )
 
 type zone struct {
@@ -72,60 +74,31 @@ func (mt *MouseTracker) Sweep(content string) string {
 
 	row, col := 0, 0
 
-	const (
-		sweepNormal = iota
-		sweepEscape
-		sweepCSI
-	)
+	lexer := ansi.NewLexer(content)
 
-	state := sweepNormal
-	var paramBuf strings.Builder
-	var seqStart int // index in content where ESC began
+	for {
+		tok := lexer.Next()
+		if tok.Type == ansi.EOFToken {
+			break
+		}
 
-	for i := 0; i < len(content); i++ {
-		b := content[i]
+		switch tok.Type {
+		case ansi.TextToken:
+			for _, r := range tok.Text {
+				if r == '\n' {
+					out.WriteRune(r)
+					row++
+					col = 0
+				} else {
+					out.WriteRune(r)
+					col += runewidth.RuneWidth(r)
+				}
+			}
 
-		switch state {
-		case sweepNormal:
-			if b == '\x1b' {
-				seqStart = i
-				state = sweepEscape
-				continue
-			}
-			if b == '\n' {
-				out.WriteByte(b)
-				row++
-				col = 0
-				continue
-			}
-			// Decode UTF-8 rune for width calculation
-			r, size := decodeRune(content[i:])
-			out.WriteString(content[i : i+size])
-			col += runewidth.RuneWidth(r)
-			i += size - 1
-
-		case sweepEscape:
-			if b == '[' {
-				paramBuf.Reset()
-				state = sweepCSI
-				continue
-			}
-			// Not a CSI sequence, output ESC + this byte
-			out.WriteString(content[seqStart : i+1])
-			state = sweepNormal
-
-		case sweepCSI:
-			if b >= '0' && b <= '9' {
-				paramBuf.WriteByte(b)
-				continue
-			}
-			if b == ';' {
-				paramBuf.WriteByte(b)
-				continue
-			}
-			// Final byte
-			if b == 'z' {
-				id := parseCSIParam(paramBuf.String())
+		case ansi.CSIToken:
+			params, final := ansi.ParseCSI(tok)
+			if final == 'z' {
+				id := parseCSIParam(params)
 				if name, ok := mt.names[id]; ok {
 					if p, opened := open[id]; opened {
 						// Second marker: close the zone
@@ -139,13 +112,15 @@ func (mt *MouseTracker) Sweep(content string) string {
 						// First marker: record start position
 						open[id] = pending{name: name, startX: col, startY: row}
 					}
-					state = sweepNormal
 					continue
 				}
 			}
 			// Not one of our markers — write the full CSI sequence to output
-			out.WriteString(content[seqStart : i+1])
-			state = sweepNormal
+			out.WriteString(tok.Text)
+
+		case ansi.ESCToken:
+			// Non-CSI escape sequences are preserved
+			out.WriteString(tok.Text)
 		}
 	}
 
@@ -179,37 +154,4 @@ func parseCSIParam(s string) int {
 		}
 	}
 	return n
-}
-
-func decodeRune(s string) (rune, int) {
-	if len(s) == 0 {
-		return 0, 0
-	}
-	b := s[0]
-	if b < 0x80 {
-		return rune(b), 1
-	}
-	// Determine byte count from leading bits
-	var size int
-	var r rune
-	switch {
-	case b&0xE0 == 0xC0:
-		size = 2
-		r = rune(b & 0x1F)
-	case b&0xF0 == 0xE0:
-		size = 3
-		r = rune(b & 0x0F)
-	case b&0xF8 == 0xF0:
-		size = 4
-		r = rune(b & 0x07)
-	default:
-		return rune(b), 1
-	}
-	if len(s) < size {
-		return rune(b), 1
-	}
-	for i := 1; i < size; i++ {
-		r = r<<6 | rune(s[i]&0x3F)
-	}
-	return r, size
 }

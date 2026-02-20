@@ -1,36 +1,12 @@
 package renderer
 
 import (
-	"strconv"
 	"strings"
 
 	"github.com/mattn/go-runewidth"
+
+	"github.com/basecamp/gliff/ansi"
 )
-
-// parseState tracks the parser state while processing input.
-type parseState int
-
-const (
-	parseNormal parseState = iota
-	parseEscape            // Saw ESC
-	parseCSI               // Saw ESC [
-)
-
-// parser converts a string with ANSI escape sequences into a 2D cell grid.
-type parser struct {
-	width  int
-	height int
-	cells  [][]Cell
-	style  Style
-
-	// Current position
-	row, col int
-
-	// Parser state
-	state  parseState
-	params []int // CSI parameter accumulator
-	curNum string
-}
 
 // parseContent parses a string into a 2D cell buffer.
 // The string may contain ANSI escape sequences for styling.
@@ -42,11 +18,7 @@ func parseContent(content string, width, height int) [][]Cell {
 		style:  DefaultStyle(),
 	}
 	p.initCells()
-
-	for _, r := range content {
-		p.processRune(r)
-	}
-
+	p.parse(content)
 	return p.cells
 }
 
@@ -59,10 +31,18 @@ func parseContentInto(content string, cells [][]Cell, width, height int) {
 		cells:  cells,
 		style:  DefaultStyle(),
 	}
+	p.parse(content)
+}
 
-	for _, r := range content {
-		p.processRune(r)
-	}
+// parser converts a string with ANSI escape sequences into a 2D cell grid.
+type parser struct {
+	width  int
+	height int
+	cells  [][]Cell
+	style  Style
+
+	// Current position
+	row, col int
 }
 
 // initCells initializes the cell buffer with empty cells.
@@ -76,98 +56,71 @@ func (p *parser) initCells() {
 	}
 }
 
-// processRune handles a single rune of input.
-func (p *parser) processRune(r rune) {
-	switch p.state {
-	case parseNormal:
-		p.handleNormal(r)
-	case parseEscape:
-		p.handleEscape(r)
-	case parseCSI:
-		p.handleCSI(r)
-	}
-}
+// parse processes the content using the ANSI lexer.
+func (p *parser) parse(content string) {
+	lexer := ansi.NewLexer(content)
 
-// handleNormal handles runes in normal (non-escape) mode.
-func (p *parser) handleNormal(r rune) {
-	switch r {
-	case '\x1b': // ESC
-		p.state = parseEscape
-	case '\n':
-		p.row++
-		p.col = 0
-	case '\r':
-		p.col = 0
-	case '\t':
-		// Tab to next 8-column boundary
-		nextTab := ((p.col / 8) + 1) * 8
-		for p.col < nextTab && p.col < p.width {
-			p.setCell(' ', 1)
+	for {
+		tok := lexer.Next()
+		if tok.Type == ansi.EOFToken {
+			break
 		}
-	default:
-		if r >= 32 { // Printable character
-			w := runewidth.RuneWidth(r)
-			p.setCell(r, w)
+
+		switch tok.Type {
+		case ansi.TextToken:
+			p.handleText(tok.Text)
+		case ansi.CSIToken:
+			p.handleCSI(tok)
+		case ansi.ESCToken:
+			// Non-CSI escape sequences are ignored
 		}
-		// Control characters (except those handled above) are ignored
 	}
 }
 
-// handleEscape handles runes after seeing ESC.
-func (p *parser) handleEscape(r rune) {
-	switch r {
-	case '[':
-		p.state = parseCSI
-		p.params = nil
-		p.curNum = ""
-	default:
-		// Unknown escape sequence; ignore and return to normal
-		p.state = parseNormal
+// handleText processes a text token.
+func (p *parser) handleText(text string) {
+	for _, r := range text {
+		switch r {
+		case '\n':
+			p.row++
+			p.col = 0
+		case '\r':
+			p.col = 0
+		case '\t':
+			// Tab to next 8-column boundary
+			nextTab := ((p.col / 8) + 1) * 8
+			for p.col < nextTab && p.col < p.width {
+				p.setCell(' ', 1)
+			}
+		default:
+			if r >= 32 { // Printable character
+				w := runewidth.RuneWidth(r)
+				p.setCell(r, w)
+			}
+			// Control characters (except those handled above) are ignored
+		}
 	}
 }
 
-// handleCSI handles runes in CSI (Control Sequence Introducer) mode.
-func (p *parser) handleCSI(r rune) {
-	switch {
-	case r >= '0' && r <= '9':
-		p.curNum += string(r)
-	case r == ';':
-		p.pushParam()
-	case r == 'm':
+// handleCSI processes a CSI token.
+func (p *parser) handleCSI(tok ansi.Token) {
+	params, final := ansi.ParseCSI(tok)
+	if final == 'm' {
 		// SGR (Select Graphic Rendition)
-		p.pushParam()
-		p.handleSGR()
-		p.state = parseNormal
-	case r >= 0x40 && r <= 0x7E:
-		// Other CSI sequences - we ignore them for now
-		// (cursor movement, etc. in input doesn't make sense)
-		p.state = parseNormal
-	default:
-		// Invalid CSI sequence
-		p.state = parseNormal
+		p.handleSGR(ansi.ParseSGRParams(params))
 	}
-}
-
-// pushParam pushes the current numeric parameter.
-func (p *parser) pushParam() {
-	if p.curNum == "" {
-		p.params = append(p.params, 0) // Default parameter
-	} else {
-		n, _ := strconv.Atoi(p.curNum)
-		p.params = append(p.params, n)
-	}
-	p.curNum = ""
+	// Other CSI sequences are ignored (cursor movement, etc. in input doesn't make sense)
 }
 
 // handleSGR processes SGR (Select Graphic Rendition) parameters.
-func (p *parser) handleSGR() {
-	if len(p.params) == 0 {
-		p.params = []int{0} // Default to reset
+func (p *parser) handleSGR(params []int) {
+	if len(params) == 0 {
+		params = []int{0} // Default to reset
 	}
 
 	i := 0
-	for i < len(p.params) {
-		param := p.params[i]
+	for i < len(params) {
+		param := params[i]
 		i++
 
 		switch param {
@@ -208,21 +161,21 @@ func (p *parser) handleSGR() {
 			p.style.FG = BasicColor(uint8(param - 30))
 		case 38:
 			// Extended foreground color
-			if i < len(p.params) {
-				switch p.params[i] {
+			if i < len(params) {
+				switch params[i] {
 				case 5: // 256 color
-					if i+1 < len(p.params) {
-						p.style.FG = PaletteColor(uint8(p.params[i+1]))
+					if i+1 < len(params) {
+						p.style.FG = PaletteColor(uint8(params[i+1]))
 						i += 2
 					} else {
 						i++
 					}
 				case 2: // RGB
-					if i+3 < len(p.params) {
+					if i+3 < len(params) {
 						p.style.FG = RGBColor(
-							uint8(p.params[i+1]),
-							uint8(p.params[i+2]),
-							uint8(p.params[i+3]),
+							uint8(params[i+1]),
+							uint8(params[i+2]),
+							uint8(params[i+3]),
 						)
 						i += 4
 					} else {
@@ -238,21 +191,21 @@ func (p *parser) handleSGR() {
 			p.style.BG = BasicColor(uint8(param - 40))
 		case 48:
 			// Extended background color
-			if i < len(p.params) {
-				switch p.params[i] {
+			if i < len(params) {
+				switch params[i] {
 				case 5: // 256 color
-					if i+1 < len(p.params) {
-						p.style.BG = PaletteColor(uint8(p.params[i+1]))
+					if i+1 < len(params) {
+						p.style.BG = PaletteColor(uint8(params[i+1]))
 						i += 2
 					} else {
 						i++
 					}
 				case 2: // RGB
-					if i+3 < len(p.params) {
+					if i+3 < len(params) {
 						p.style.BG = RGBColor(
-							uint8(p.params[i+1]),
-							uint8(p.params[i+2]),
-							uint8(p.params[i+3]),
+							uint8(params[i+1]),
+							uint8(params[i+2]),
+							uint8(params[i+3]),
 						)
 						i += 4
 					} else {
@@ -315,28 +268,17 @@ func (p *parser) setCell(r rune, width int) {
 // Useful for calculating the display width of styled text.
 func stripANSI(s string) string {
 	var result strings.Builder
-	state := parseNormal
+	lexer := ansi.NewLexer(s)
 
-	for _, r := range s {
-		switch state {
-		case parseNormal:
-			if r == '\x1b' {
-				state = parseEscape
-			} else {
-				result.WriteRune(r)
-			}
-		case parseEscape:
-			if r == '[' {
-				state = parseCSI
-			} else {
-				state = parseNormal
-			}
-		case parseCSI:
-			if r >= 0x40 && r <= 0x7E {
-				state = parseNormal
-			}
-			// Consume CSI parameters
+	for {
+		tok := lexer.Next()
+		if tok.Type == ansi.EOFToken {
+			break
 		}
+		if tok.Type == ansi.TextToken {
+			result.WriteString(tok.Text)
+		}
+		// CSI and ESC tokens are skipped
 	}
 
 	return result.String()

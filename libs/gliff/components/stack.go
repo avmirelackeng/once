@@ -3,6 +3,7 @@ package components
 import (
 	"regexp"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/mattn/go-runewidth"
 
@@ -56,7 +57,7 @@ func truncateToWidth(s string, width int) string {
 		}
 
 		// Regular character - check its width
-		r, size := []rune(s[i:])[0], len(string([]rune(s[i:])[0]))
+		r, size := utf8.DecodeRuneInString(s[i:])
 		rw := runewidth.RuneWidth(r)
 		if visibleWidth+rw > width {
 			break

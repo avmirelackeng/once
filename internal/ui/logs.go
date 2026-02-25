@@ -45,6 +45,7 @@ func NewLogs(ns *docker.Namespace, app *docker.Application) *Logs {
 	streamer := docker.NewLogStreamer(ns, docker.LogStreamerSettings{})
 
 	filterInput := textinput.New()
+	filterInput.Prompt = ""
 	filterInput.Placeholder = "Filter logs"
 	filterInput.CharLimit = 256
 

@@ -34,6 +34,7 @@ type TextField struct {
 
 func NewTextField(placeholder string) *TextField {
 	input := textinput.New()
+	input.Prompt = ""
 	input.Placeholder = placeholder
 	input.CharLimit = 256
 	return &TextField{input: input}

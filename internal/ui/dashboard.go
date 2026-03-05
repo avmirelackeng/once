@@ -335,7 +335,7 @@ func (m *Dashboard) updateViewportSize() {
 	if headerHeight > 0 {
 		headerHeight++ // blank line separating header from app panels
 	}
-	helpHeight := 1
+	helpHeight := m.help.Height()
 	progressHeight := 0
 	if m.toggling {
 		progressHeight = 1

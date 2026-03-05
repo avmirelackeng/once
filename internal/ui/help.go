@@ -45,6 +45,10 @@ func (h *Help) SetBindings(bindings []key.Binding) {
 	h.bindings = bindings
 }
 
+func (h Help) Height() int {
+	return strings.Count(h.View(), "\n") + 1
+}
+
 func (h Help) View() string {
 	keyStyle := lipgloss.NewStyle().Bold(true)
 	descStyle := lipgloss.NewStyle().Foreground(Colors.Border)

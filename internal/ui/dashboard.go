@@ -53,7 +53,7 @@ type Dashboard struct {
 	toggling      bool
 	togglingApp   string
 	showDetails   bool
-	progress      ProgressBusy
+	progress      Progress
 	help          Help
 	overlay       Component
 }
@@ -85,7 +85,7 @@ func NewDashboard(ns *docker.Namespace, apps []*docker.Application, selectedInde
 		header:        NewDashboardHeader(systemScraper),
 		hostname:      hostname,
 		showDetails:   true,
-		progress:      NewProgressBusy(0, Colors.Border),
+		progress:      NewProgress(0, Colors.Border),
 		help:          NewHelp(),
 	}
 	d.buildPanels()
@@ -114,7 +114,7 @@ func (m Dashboard) Update(msg tea.Msg) (Component, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
-		m.progress = NewProgressBusy(m.width, Colors.Border)
+		m.progress = m.progress.SetWidth(m.width)
 		m.help.SetWidth(m.width)
 		m.updateViewportSize()
 		m.rebuildViewportContent()
@@ -188,7 +188,7 @@ func (m Dashboard) Update(msg tea.Msg) (Component, tea.Cmd) {
 			app := msg.app
 			m.toggling = true
 			m.togglingApp = app.Settings.Name
-			m.progress = NewProgressBusy(m.width, Colors.Border)
+			m.progress = NewProgress(m.width, Colors.Border)
 			m.updateViewportSize()
 			m.rebuildViewportContent()
 			return m, tea.Batch(m.progress.Init(), m.runStartStop(app))
@@ -209,7 +209,7 @@ func (m Dashboard) Update(msg tea.Msg) (Component, tea.Cmd) {
 		m.rebuildViewportContent()
 		cmds = append(cmds, m.scheduleNextDashboardTick())
 
-	case ProgressBusyTickMsg:
+	case ProgressTickMsg:
 		if m.toggling {
 			var cmd tea.Cmd
 			m.progress, cmd = m.progress.Update(msg)

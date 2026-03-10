@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 
-	"charm.land/bubbles/v2/progress"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 
@@ -45,8 +44,7 @@ type InstallActivity struct {
 	width, height int
 	stage         installStage
 	percentage    int
-	progressBar   progress.Model
-	progressBusy  ProgressBusy
+	progress      Progress
 	progressChan  chan installProgressMsg
 	doneChan      chan installDoneMsg
 	ctx           context.Context
@@ -60,7 +58,7 @@ func NewInstallActivity(ns *docker.Namespace, imageRef, hostname string) *Instal
 		imageRef:     imageRef,
 		hostname:     hostname,
 		stage:        stagePreparing,
-		progressBusy: NewProgressBusy(0, nil),
+		progress:     NewProgress(0, Colors.Primary),
 		progressChan: make(chan installProgressMsg, 10),
 		doneChan:     make(chan installDoneMsg, 1),
 		ctx:          ctx,
@@ -69,23 +67,23 @@ func NewInstallActivity(ns *docker.Namespace, imageRef, hostname string) *Instal
 }
 
 func (m *InstallActivity) Init() tea.Cmd {
-	return tea.Batch(m.progressBusy.Init(), m.startInstall(), m.waitForProgress())
+	return tea.Batch(m.progress.Init(), m.startInstall(), m.waitForProgress())
 }
 
 func (m *InstallActivity) Update(msg tea.Msg) tea.Cmd {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
-		progressWidth := min(m.width-4, 60)
-		m.progressBar = progress.New(progress.WithColors(Colors.Primary))
-		m.progressBar.SetWidth(progressWidth)
-		m.progressBusy = NewProgressBusy(progressWidth, Colors.Primary)
+		m.progress = m.progress.SetWidth(min(m.width-4, 60))
 
 	case installProgressMsg:
 		m.stage = msg.stage
 		m.percentage = msg.percentage
-		if msg.stage == stageStarting || msg.stage == stageVerifying {
-			return tea.Batch(m.progressBusy.Init(), m.waitForProgress())
+		switch msg.stage {
+		case stageDownloading:
+			m.progress = m.progress.SetPercent(msg.percentage)
+		default:
+			m.progress = m.progress.SetPercent(-1)
 		}
 		return m.waitForProgress()
 
@@ -95,9 +93,9 @@ func (m *InstallActivity) Update(msg tea.Msg) tea.Cmd {
 		}
 		return func() tea.Msg { return InstallActivityDoneMsg{App: msg.app} }
 
-	case ProgressBusyTickMsg:
+	case ProgressTickMsg:
 		var cmd tea.Cmd
-		m.progressBusy, cmd = m.progressBusy.Update(msg)
+		m.progress, cmd = m.progress.Update(msg)
 		return cmd
 	}
 
@@ -119,13 +117,7 @@ func (m *InstallActivity) View() string {
 
 	statusLine := Styles.CenteredLine(m.width, status)
 
-	var progressView string
-	switch m.stage {
-	case stagePreparing, stageStarting, stageVerifying:
-		progressView = Styles.CenteredLine(m.width, m.progressBusy.View())
-	case stageDownloading:
-		progressView = Styles.CenteredLine(m.width, m.progressBar.ViewAs(float64(m.percentage)/100.0))
-	}
+	progressView := Styles.CenteredLine(m.width, m.progress.View())
 
 	return lipgloss.JoinVertical(lipgloss.Left, statusLine, progressView)
 }

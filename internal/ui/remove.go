@@ -27,7 +27,7 @@ type Remove struct {
 	width, height int
 	help          Help
 	removing      bool
-	progress      ProgressBusy
+	progress      Progress
 	err           error
 }
 
@@ -39,7 +39,7 @@ func NewRemove(ns *docker.Namespace, app *docker.Application) Remove {
 		app:          app,
 		confirmation: NewConfirmation("Remove application and data?", "Remove"),
 		help:         h,
-		progress:     NewProgressBusy(0, Colors.Border),
+		progress:     NewProgress(0, Colors.Border),
 	}
 }
 
@@ -54,7 +54,7 @@ func (m Remove) Update(msg tea.Msg) (Component, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
 		m.help.SetWidth(m.width)
-		m.progress = NewProgressBusy(m.width, Colors.Border)
+		m.progress = m.progress.SetWidth(m.width)
 		if m.removing {
 			cmds = append(cmds, m.progress.Init())
 		}
@@ -85,7 +85,7 @@ func (m Remove) Update(msg tea.Msg) (Component, tea.Cmd) {
 
 	case ConfirmationConfirmMsg:
 		m.removing = true
-		m.progress = NewProgressBusy(m.width, Colors.Border)
+		m.progress = NewProgress(m.width, Colors.Border)
 		return m, tea.Batch(m.progress.Init(), m.runRemove())
 
 	case ConfirmationCancelMsg:
@@ -99,7 +99,7 @@ func (m Remove) Update(msg tea.Msg) (Component, tea.Cmd) {
 		}
 		return m, func() tea.Msg { return NavigateToDashboardMsg{AllowEmpty: true} }
 
-	case ProgressBusyTickMsg:
+	case ProgressTickMsg:
 		if m.removing {
 			var cmd tea.Cmd
 			m.progress, cmd = m.progress.Update(msg)

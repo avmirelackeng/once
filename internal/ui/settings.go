@@ -51,7 +51,7 @@ type Settings struct {
 	state                settingsState
 	section              SettingsSection
 	sectionType          SettingsSectionType
-	progress             ProgressBusy
+	progress             Progress
 	err                  error
 	actionSuccessMessage string
 }
@@ -101,7 +101,7 @@ func NewSettings(ns *docker.Namespace, app *docker.Application, sectionType Sett
 		state:       settingsStateForm,
 		section:     section,
 		sectionType: sectionType,
-		progress:    NewProgressBusy(0, Colors.Border),
+		progress:    NewProgress(0, Colors.Border),
 	}
 }
 
@@ -116,7 +116,7 @@ func (m Settings) Update(msg tea.Msg) (Component, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
 		m.help.SetWidth(m.width)
-		m.progress = NewProgressBusy(m.width, Colors.Border)
+		m.progress = m.progress.SetWidth(m.width)
 		if m.state == settingsStateForm {
 			m.section, _ = m.section.Update(msg)
 		}
@@ -163,7 +163,7 @@ func (m Settings) Update(msg tea.Msg) (Component, tea.Cmd) {
 
 	case settingsRunActionMsg:
 		m.state = settingsStateRunningAction
-		m.progress = NewProgressBusy(m.width, Colors.Border)
+		m.progress = NewProgress(m.width, Colors.Border)
 		return m, tea.Batch(m.progress.Init(), func() tea.Msg {
 			message, err := msg.action()
 			return settingsActionFinishedMsg{err: err, message: message}
@@ -175,7 +175,7 @@ func (m Settings) Update(msg tea.Msg) (Component, tea.Cmd) {
 	case settingsActionFinishedMsg:
 		return m.handleActionResult(msg)
 
-	case ProgressBusyTickMsg:
+	case ProgressTickMsg:
 		if m.state == settingsStateDeploying || m.state == settingsStateRunningAction {
 			var cmd tea.Cmd
 			m.progress, cmd = m.progress.Update(msg)
@@ -247,7 +247,7 @@ func (m Settings) handleFormSubmit(msg SettingsSectionSubmitMsg) (Component, tea
 	}
 	m.state = settingsStateDeploying
 	m.app.Settings = msg.Settings
-	m.progress = NewProgressBusy(m.width, Colors.Border)
+	m.progress = NewProgress(m.width, Colors.Border)
 	return m, tea.Batch(m.progress.Init(), m.runDeploy())
 }
 

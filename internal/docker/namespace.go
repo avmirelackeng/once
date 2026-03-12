@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"regexp"
 	"slices"
 	"strings"
@@ -29,7 +30,17 @@ type Namespace struct {
 	applications []*Application
 }
 
-func NewNamespace(name string) (*Namespace, error) {
+type NamespaceOption func(*Namespace)
+
+func WithApplications(apps ...ApplicationSettings) NamespaceOption {
+	return func(ns *Namespace) {
+		for _, s := range apps {
+			ns.addApplication(s)
+		}
+	}
+}
+
+func NewNamespace(name string, opts ...NamespaceOption) (*Namespace, error) {
 	if name == "" {
 		name = DefaultNamespace
 	}
@@ -48,6 +59,11 @@ func NewNamespace(name string) (*Namespace, error) {
 		client: c,
 	}
 	ns.proxy = NewProxy(ns)
+
+	for _, opt := range opts {
+		opt(ns)
+	}
+
 	return ns, nil
 }
 
@@ -68,7 +84,7 @@ func (n *Namespace) Name() string {
 	return n.name
 }
 
-func (n *Namespace) AddApplication(settings ApplicationSettings) *Application {
+func (n *Namespace) addApplication(settings ApplicationSettings) *Application {
 	app := NewApplication(n, settings)
 	n.applications = append(n.applications, app)
 	n.sortApplications()
@@ -90,12 +106,6 @@ func (n *Namespace) Application(name string) *Application {
 
 func (n *Namespace) Applications() []*Application {
 	return n.applications
-}
-
-func (n *Namespace) RemoveApplication(app *Application) {
-	n.applications = slices.DeleteFunc(n.applications, func(a *Application) bool {
-		return a == app
-	})
 }
 
 func (n *Namespace) HostInUse(host string) bool {
@@ -234,12 +244,21 @@ func (n *Namespace) Restore(ctx context.Context, r io.Reader) (*Application, err
 	}
 	appSettings.Name = name
 
-	app := n.AddApplication(appSettings)
+	app := NewApplication(n, appSettings)
 	if err := app.Restore(ctx, volSettings, volumeData); err != nil {
-		n.RemoveApplication(app)
+		if cleanupErr := app.Destroy(context.Background(), true); cleanupErr != nil {
+			slog.Error("Failed to clean up after restore failure", "app", appSettings.Name, "error", cleanupErr)
+		}
 		return nil, err
 	}
 
+	if err := n.Refresh(ctx); err != nil {
+		slog.Error("Failed to refresh namespace after restore", "app", appSettings.Name, "error", err)
+	}
+
+	if restored := n.Application(appSettings.Name); restored != nil {
+		return restored, nil
+	}
 	return app, nil
 }
 

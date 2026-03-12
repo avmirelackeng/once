@@ -3,6 +3,7 @@ package command
 import (
 	"context"
 	"fmt"
+	"log/slog"
 
 	"github.com/spf13/cobra"
 
@@ -50,7 +51,7 @@ func (d *deployCommand) run(ctx context.Context, ns *docker.Namespace, cmd *cobr
 		return docker.ErrHostnameInUse
 	}
 
-	app := ns.AddApplication(docker.ApplicationSettings{
+	app := docker.NewApplication(ns, docker.ApplicationSettings{
 		Name:       name,
 		Image:      imageRef,
 		Host:       host,
@@ -69,12 +70,17 @@ func (d *deployCommand) run(ctx context.Context, ns *docker.Namespace, cmd *cobr
 	}
 
 	if err := app.Deploy(ctx, progress); err != nil {
+		if cleanupErr := app.Destroy(context.Background(), true); cleanupErr != nil {
+			slog.Error("Failed to clean up after deploy failure", "app", name, "error", cleanupErr)
+		}
 		return fmt.Errorf("%w: %w", docker.ErrDeployFailed, err)
 	}
 
 	fmt.Println("Verifying...")
 	if err := app.VerifyHTTP(ctx); err != nil {
-		app.Destroy(ctx, true)
+		if cleanupErr := app.Destroy(context.Background(), true); cleanupErr != nil {
+			slog.Error("Failed to clean up after verification failure", "app", name, "error", cleanupErr)
+		}
 		return err
 	}
 

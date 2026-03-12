@@ -3,6 +3,7 @@ package ui
 import (
 	"context"
 	"fmt"
+	"log/slog"
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
@@ -174,7 +175,7 @@ func (m *InstallActivity) runInstall(ctx context.Context) {
 	}
 	hostname := m.hostname
 
-	app := m.namespace.AddApplication(docker.ApplicationSettings{
+	app := docker.NewApplication(m.namespace, docker.ApplicationSettings{
 		Name:       appName,
 		Image:      m.imageRef,
 		Host:       hostname,
@@ -191,7 +192,9 @@ func (m *InstallActivity) runInstall(ctx context.Context) {
 	}
 
 	if err := app.Deploy(ctx, progress); err != nil {
-		m.namespace.RemoveApplication(app)
+		if cleanupErr := app.Destroy(context.Background(), true); cleanupErr != nil {
+			slog.Error("Failed to clean up after deploy failure", "app", appName, "error", cleanupErr)
+		}
 		m.doneChan <- installDoneMsg{err: fmt.Errorf("%w: %w", docker.ErrDeployFailed, err)}
 		return
 	}
@@ -199,8 +202,9 @@ func (m *InstallActivity) runInstall(ctx context.Context) {
 	m.progressChan <- installProgressMsg{stage: stageVerifying}
 
 	if err := app.VerifyHTTP(ctx); err != nil {
-		app.Destroy(ctx, true)
-		m.namespace.RemoveApplication(app)
+		if cleanupErr := app.Destroy(context.Background(), true); cleanupErr != nil {
+			slog.Error("Failed to clean up after verification failure", "app", appName, "error", cleanupErr)
+		}
 		m.doneChan <- installDoneMsg{err: err}
 		return
 	}

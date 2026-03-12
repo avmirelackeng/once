@@ -42,12 +42,17 @@ func TestDockerDeployment(t *testing.T) {
 	require.NoError(t, ns.EnsureNetwork(ctx))
 	require.NoError(t, ns.Proxy().Boot(ctx, getProxyPorts(t)))
 
-	app := ns.AddApplication(docker.ApplicationSettings{
+	app := deployApp(t, ctx, ns, docker.ApplicationSettings{
 		Name:  "campfire",
 		Image: "ghcr.io/basecamp/once-campfire:main",
 		Host:  "campfire.localhost",
 	})
-	require.NoError(t, app.Deploy(ctx, nil))
+
+	// After deploy + refresh, the namespace should know about the app
+	require.NotNil(t, app)
+	assert.Equal(t, "campfire", app.Settings.Name)
+	assert.Len(t, ns.Applications(), 1)
+	assert.True(t, ns.HostInUse("campfire.localhost"))
 }
 
 func TestRestoreState(t *testing.T) {
@@ -63,12 +68,11 @@ func TestRestoreState(t *testing.T) {
 	proxySettings := getProxyPorts(t)
 	require.NoError(t, ns1.Proxy().Boot(ctx, proxySettings))
 
-	app := ns1.AddApplication(docker.ApplicationSettings{
+	app := deployApp(t, ctx, ns1, docker.ApplicationSettings{
 		Name:  "testapp",
 		Image: "ghcr.io/basecamp/once-campfire:main",
 		Host:  "testapp.localhost",
 	})
-	require.NoError(t, app.Deploy(ctx, nil))
 
 	ns2, err := docker.RestoreNamespace(ctx, "once-restore-test")
 	require.NoError(t, err)
@@ -134,13 +138,11 @@ func TestGaplessDeployment(t *testing.T) {
 	require.NoError(t, ns.EnsureNetwork(ctx))
 	require.NoError(t, ns.Proxy().Boot(ctx, getProxyPorts(t)))
 
-	app := ns.AddApplication(docker.ApplicationSettings{
+	app := deployApp(t, ctx, ns, docker.ApplicationSettings{
 		Name:  "gapless",
 		Image: "ghcr.io/basecamp/once-campfire:main",
 		Host:  "gapless.localhost",
 	})
-
-	require.NoError(t, app.Deploy(ctx, nil), "first deploy")
 
 	vol, err := app.Volume(ctx)
 	require.NoError(t, err)
@@ -182,7 +184,7 @@ func TestLargeLabelData(t *testing.T) {
 	require.NoError(t, ns.EnsureNetwork(ctx))
 	require.NoError(t, ns.Proxy().Boot(ctx, getProxyPorts(t)))
 
-	app := ns.AddApplication(docker.ApplicationSettings{
+	deployApp(t, ctx, ns, docker.ApplicationSettings{
 		Name:  "largelabel",
 		Image: "ghcr.io/basecamp/once-campfire:main",
 		Host:  "largelabel.localhost",
@@ -190,7 +192,6 @@ func TestLargeLabelData(t *testing.T) {
 			"LARGE_VALUE": largeValue,
 		},
 	})
-	require.NoError(t, app.Deploy(ctx, nil))
 
 	ns2, err := docker.RestoreNamespace(ctx, "once-large-label-test")
 	require.NoError(t, err)
@@ -211,12 +212,11 @@ func TestStartStop(t *testing.T) {
 	require.NoError(t, ns.EnsureNetwork(ctx))
 	require.NoError(t, ns.Proxy().Boot(ctx, getProxyPorts(t)))
 
-	app := ns.AddApplication(docker.ApplicationSettings{
+	app := deployApp(t, ctx, ns, docker.ApplicationSettings{
 		Name:  "startstop",
 		Image: "ghcr.io/basecamp/once-campfire:main",
 		Host:  "startstop.localhost",
 	})
-	require.NoError(t, app.Deploy(ctx, nil))
 
 	containerName, err := app.ContainerName(ctx)
 	require.NoError(t, err)
@@ -245,12 +245,11 @@ func TestLongAppName(t *testing.T) {
 	require.NoError(t, ns.EnsureNetwork(ctx))
 	require.NoError(t, ns.Proxy().Boot(ctx, getProxyPorts(t)))
 
-	app := ns.AddApplication(docker.ApplicationSettings{
+	deployApp(t, ctx, ns, docker.ApplicationSettings{
 		Name:  longName,
 		Image: "ghcr.io/basecamp/once-campfire:main",
 		Host:  "longname.localhost",
 	})
-	require.NoError(t, app.Deploy(ctx, nil))
 
 	ns2, err := docker.RestoreNamespace(ctx, "once-long-name-test")
 	require.NoError(t, err)
@@ -271,12 +270,11 @@ func TestContainerLogConfig(t *testing.T) {
 	require.NoError(t, ns.EnsureNetwork(ctx))
 	require.NoError(t, ns.Proxy().Boot(ctx, getProxyPorts(t)))
 
-	app := ns.AddApplication(docker.ApplicationSettings{
+	app := deployApp(t, ctx, ns, docker.ApplicationSettings{
 		Name:  "logtest",
 		Image: "ghcr.io/basecamp/once-campfire:main",
 		Host:  "logtest.localhost",
 	})
-	require.NoError(t, app.Deploy(ctx, nil))
 
 	assertContainerLogConfig(t, ctx, "once-logconfig-test-proxy")
 
@@ -297,12 +295,11 @@ func TestBackup(t *testing.T) {
 	require.NoError(t, ns.Proxy().Boot(ctx, getProxyPorts(t)))
 
 	imageName := "ghcr.io/basecamp/once-campfire:main"
-	app := ns.AddApplication(docker.ApplicationSettings{
+	app := deployApp(t, ctx, ns, docker.ApplicationSettings{
 		Name:  "backupapp",
 		Image: imageName,
 		Host:  "backupapp.localhost",
 	})
-	require.NoError(t, app.Deploy(ctx, nil))
 
 	containerName, err := app.ContainerName(ctx)
 	require.NoError(t, err)
@@ -349,12 +346,11 @@ func TestRestore(t *testing.T) {
 	require.NoError(t, ns1.Proxy().Boot(ctx, getProxyPorts(t)))
 
 	imageName := "ghcr.io/basecamp/once-campfire:main"
-	app := ns1.AddApplication(docker.ApplicationSettings{
+	app := deployApp(t, ctx, ns1, docker.ApplicationSettings{
 		Name:  "restoreapp",
 		Image: imageName,
 		Host:  "restore.localhost",
 	})
-	require.NoError(t, app.Deploy(ctx, nil))
 
 	containerName, err := app.ContainerName(ctx)
 	require.NoError(t, err)
@@ -390,6 +386,10 @@ func TestRestore(t *testing.T) {
 	assert.NotEqual(t, "restoreapp", restoredApp.Settings.Name)
 	assert.Equal(t, imageName, restoredApp.Settings.Image)
 	assert.Equal(t, "restore.localhost", restoredApp.Settings.Host)
+
+	// Verify the namespace is refreshed — the app should be visible immediately
+	assert.NotNil(t, ns2.Application(restoredApp.Settings.Name), "app should be in namespace immediately after Restore")
+	assert.True(t, ns2.HostInUse("restore.localhost"), "hostname should be in use after Restore")
 
 	// Verify volume settings (SecretKeyBase) were preserved
 	restoredVol, err := restoredApp.Volume(ctx)
@@ -431,12 +431,11 @@ func TestRestoreHostnameConflictFails(t *testing.T) {
 	require.NoError(t, ns.Proxy().Boot(ctx, getProxyPorts(t)))
 
 	imageName := "ghcr.io/basecamp/once-campfire:main"
-	app := ns.AddApplication(docker.ApplicationSettings{
+	app := deployApp(t, ctx, ns, docker.ApplicationSettings{
 		Name:  "existingapp",
 		Image: imageName,
 		Host:  "existingapp.localhost",
 	})
-	require.NoError(t, app.Deploy(ctx, nil))
 
 	backupDir := t.TempDir()
 	require.NoError(t, app.BackupToFile(ctx, backupDir, "backup.tar.gz"))
@@ -461,12 +460,11 @@ func TestBackupHookBehavior(t *testing.T) {
 	require.NoError(t, ns.EnsureNetwork(ctx))
 	require.NoError(t, ns.Proxy().Boot(ctx, getProxyPorts(t)))
 
-	app := ns.AddApplication(docker.ApplicationSettings{
+	app := deployApp(t, ctx, ns, docker.ApplicationSettings{
 		Name:  "hooktest",
 		Image: "ghcr.io/basecamp/once-campfire:main",
 		Host:  "hooktest.localhost",
 	})
-	require.NoError(t, app.Deploy(ctx, nil))
 
 	containerName, err := app.ContainerName(ctx)
 	require.NoError(t, err)
@@ -558,12 +556,11 @@ func TestRemoveApplication(t *testing.T) {
 	require.NoError(t, ns.EnsureNetwork(ctx))
 	require.NoError(t, ns.Proxy().Boot(ctx, getProxyPorts(t)))
 
-	app := ns.AddApplication(docker.ApplicationSettings{
+	app := deployApp(t, ctx, ns, docker.ApplicationSettings{
 		Name:  "removeapp",
 		Image: "ghcr.io/basecamp/once-campfire:main",
 		Host:  "removeapp.localhost",
 	})
-	require.NoError(t, app.Deploy(ctx, nil))
 
 	containerPrefix := "once-remove-test-app-removeapp-"
 	assert.Equal(t, 1, countContainers(t, ctx, containerPrefix))
@@ -587,12 +584,11 @@ func TestRemoveApplicationWithData(t *testing.T) {
 	require.NoError(t, ns.EnsureNetwork(ctx))
 	require.NoError(t, ns.Proxy().Boot(ctx, getProxyPorts(t)))
 
-	app := ns.AddApplication(docker.ApplicationSettings{
+	app := deployApp(t, ctx, ns, docker.ApplicationSettings{
 		Name:  "removeapp",
 		Image: "ghcr.io/basecamp/once-campfire:main",
 		Host:  "removeapp.localhost",
 	})
-	require.NoError(t, app.Deploy(ctx, nil))
 
 	containerPrefix := "once-removedata-test-app-removeapp-"
 	assert.Equal(t, 1, countContainers(t, ctx, containerPrefix))
@@ -618,18 +614,25 @@ func TestContainerResources(t *testing.T) {
 	require.NoError(t, ns.EnsureNetwork(ctx))
 	require.NoError(t, ns.Proxy().Boot(ctx, getProxyPorts(t)))
 
-	app := ns.AddApplication(docker.ApplicationSettings{
+	app := deployApp(t, ctx, ns, docker.ApplicationSettings{
 		Name:      "campfire",
 		Image:     "ghcr.io/basecamp/once-campfire:main",
 		Host:      "campfire.localhost",
 		Resources: docker.ContainerResources{CPUs: 1, MemoryMB: 1024},
 	})
-	require.NoError(t, app.Deploy(ctx, nil))
 
 	containerName, err := app.ContainerName(ctx)
 	require.NoError(t, err)
 
 	assertContainerResources(t, ctx, containerName, 1e9, 1024*1024*1024)
+}
+
+func deployApp(t *testing.T, ctx context.Context, ns *docker.Namespace, settings docker.ApplicationSettings) *docker.Application {
+	t.Helper()
+	app := docker.NewApplication(ns, settings)
+	require.NoError(t, app.Deploy(ctx, nil))
+	require.NoError(t, ns.Refresh(ctx))
+	return ns.Application(settings.Name)
 }
 
 func getFreePort(t *testing.T) int {

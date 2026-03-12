@@ -211,7 +211,7 @@ func TestInstall_ShowsLogoAndHidesTitleWhenNoApps(t *testing.T) {
 }
 
 func TestInstall_ShowsTitleAndHidesLogoWhenAppsExist(t *testing.T) {
-	ns := newTestNamespace("myapp")
+	ns := newTestNamespace(docker.ApplicationSettings{Name: "myapp"})
 	m := NewInstall(ns, "")
 	m, _ = updateInstall(m, tea.WindowSizeMsg{Width: 80, Height: 40})
 
@@ -259,8 +259,7 @@ func TestInstall_NonPullDeployFailureReturnsToHostname(t *testing.T) {
 }
 
 func TestInstall_HostnameInUseBlocksInstall(t *testing.T) {
-	ns := newTestNamespace()
-	ns.AddApplication(docker.ApplicationSettings{Name: "myapp", Host: "taken.example.com"})
+	ns := newTestNamespace(docker.ApplicationSettings{Name: "myapp", Host: "taken.example.com"})
 	m := NewInstall(ns, "")
 	m, _ = updateInstall(m, tea.WindowSizeMsg{Width: 80, Height: 24})
 	m, _ = updateInstall(m, InstallAppSelectedMsg{ImageRef: "ghcr.io/basecamp/once-campfire"})
@@ -272,8 +271,7 @@ func TestInstall_HostnameInUseBlocksInstall(t *testing.T) {
 }
 
 func TestInstall_UniqueHostnameAllowsInstall(t *testing.T) {
-	ns := newTestNamespace()
-	ns.AddApplication(docker.ApplicationSettings{Name: "myapp", Host: "taken.example.com"})
+	ns := newTestNamespace(docker.ApplicationSettings{Name: "myapp", Host: "taken.example.com"})
 	m := NewInstall(ns, "")
 	m, _ = updateInstall(m, tea.WindowSizeMsg{Width: 80, Height: 24})
 	m, _ = updateInstall(m, InstallAppSelectedMsg{ImageRef: "ghcr.io/basecamp/once-campfire"})
@@ -290,7 +288,7 @@ func TestInstall_FailureRestartsLogoOnlyWhenNoApps(t *testing.T) {
 	_, cmd := updateInstall(noApps, InstallActivityFailedMsg{Err: errors.New("fail")})
 	assert.NotNil(t, cmd)
 
-	withApps := NewInstall(newTestNamespace("myapp"), "")
+	withApps := NewInstall(newTestNamespace(docker.ApplicationSettings{Name: "myapp"}), "")
 	withApps, _ = updateInstall(withApps, tea.WindowSizeMsg{Width: 80, Height: 40})
 	withApps, _ = updateInstall(withApps, InstallFormSubmitMsg{ImageRef: "ghcr.io/basecamp/once-campfire:latest", Hostname: "app.example.com"})
 	_, cmd = updateInstall(withApps, InstallActivityFailedMsg{Err: errors.New("fail")})
@@ -318,7 +316,7 @@ func TestInstall_HelpKeyShownOnHostnameScreen(t *testing.T) {
 }
 
 func TestInstall_HelpKeyShownOnHostnameScreenNonFirstRun(t *testing.T) {
-	ns := newTestNamespace("campfire")
+	ns := newTestNamespace(docker.ApplicationSettings{Name: "campfire"})
 	m := NewInstall(ns, "")
 	m, _ = updateInstall(m, tea.WindowSizeMsg{Width: 80, Height: 24})
 
@@ -378,13 +376,10 @@ func newTestInstall() Install {
 	return NewInstall(nil, "")
 }
 
-func newTestNamespace(appNames ...string) *docker.Namespace {
-	ns, err := docker.NewNamespace("test")
+func newTestNamespace(apps ...docker.ApplicationSettings) *docker.Namespace {
+	ns, err := docker.NewNamespace("test", docker.WithApplications(apps...))
 	if err != nil {
 		panic(err)
-	}
-	for _, name := range appNames {
-		ns.AddApplication(docker.ApplicationSettings{Name: name})
 	}
 	return ns
 }

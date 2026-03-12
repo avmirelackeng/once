@@ -56,6 +56,19 @@ func TestHostInUseByAnother(t *testing.T) {
 	assert.False(t, ns.HostInUseByAnother("other.localhost", "app1"))
 }
 
+func TestNewApplicationDoesNotAffectNamespace(t *testing.T) {
+	ns := &Namespace{name: "test"}
+	ns.addApplication(ApplicationSettings{Name: "existing", Host: "existing.localhost"})
+
+	// NewApplication creates a standalone app without adding it to the namespace
+	app := NewApplication(ns, ApplicationSettings{Name: "standalone", Host: "standalone.localhost"})
+
+	assert.Nil(t, ns.Application("standalone"))
+	assert.False(t, ns.HostInUse("standalone.localhost"))
+	assert.Len(t, ns.Applications(), 1)
+	assert.Equal(t, "standalone", app.Settings.Name)
+}
+
 func TestContainerAppName(t *testing.T) {
 	ns := &Namespace{name: "once"}
 

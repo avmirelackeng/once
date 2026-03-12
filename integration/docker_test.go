@@ -499,6 +499,54 @@ func TestBackupHookBehavior(t *testing.T) {
 	})
 }
 
+func TestBackupStoppedContainer(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+
+	ns, err := docker.NewNamespace("once-backup-stopped-test")
+	require.NoError(t, err)
+	defer ns.Teardown(ctx, true)
+
+	require.NoError(t, ns.EnsureNetwork(ctx))
+	require.NoError(t, ns.Proxy().Boot(ctx, getProxyPorts(t)))
+
+	imageName := "ghcr.io/basecamp/once-campfire:main"
+	app := ns.AddApplication(docker.ApplicationSettings{
+		Name:  "stoppedapp",
+		Image: imageName,
+		Host:  "stoppedapp.localhost",
+	})
+	require.NoError(t, app.Deploy(ctx, nil))
+
+	containerName, err := app.ContainerName(ctx)
+	require.NoError(t, err)
+
+	execInContainer(t, ctx, containerName, []string{
+		"sh", "-c", "echo 'stopped test content' > /rails/storage/testfile.txt",
+	})
+
+	require.NoError(t, app.Stop(ctx))
+
+	stop := collectPauseEvents(t, ctx, containerName)
+
+	backupDir := t.TempDir()
+	require.NoError(t, app.BackupToFile(ctx, backupDir, "backup.tar.gz"))
+
+	actions := stop()
+	assert.Empty(t, actions)
+
+	backupFile, err := os.Open(filepath.Join(backupDir, "backup.tar.gz"))
+	require.NoError(t, err)
+	defer backupFile.Close()
+
+	entries := extractTarGz(t, backupFile)
+
+	assert.Contains(t, entries, "once.application.json")
+	assert.Contains(t, entries, "once.volume.json")
+	assert.Contains(t, entries, "data/testfile.txt")
+	assert.Equal(t, "stopped test content\n", string(entries["data/testfile.txt"]))
+}
+
 func TestRestoreWithPostRestoreHook(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()

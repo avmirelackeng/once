@@ -189,6 +189,14 @@ func (a *Application) backupToWriter(ctx context.Context, w io.Writer) error {
 
 func (a *Application) copyVolumeData(ctx context.Context, containerName string, tw *tar.Writer, pause bool) (returnErr error) {
 	if pause {
+		info, err := a.namespace.client.ContainerInspect(ctx, containerName)
+		if err != nil {
+			return fmt.Errorf("inspecting container: %w", err)
+		}
+		pause = info.State.Running
+	}
+
+	if pause {
 		slog.Info("Pausing container to create backup", "app", a.Settings.Name)
 
 		if err := a.namespace.client.ContainerPause(ctx, containerName); err != nil {

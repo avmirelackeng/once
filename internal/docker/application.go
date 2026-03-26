@@ -31,7 +31,7 @@ var (
 	ErrDeployFailed       = errors.New("deploy failed")
 	ErrVerificationFailed = &describedError{
 		msg:         "verification failed",
-		description: "The application did not respond to a health check after starting. It may have crashed or need longer to start up.",
+		description: "The application couldn't be verified. Please check that you have a valid DNS record set up.",
 	}
 	ErrUnpauseFailed = errors.New("failed to unpause container after backup")
 )

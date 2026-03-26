@@ -201,10 +201,7 @@ func (m *InstallActivity) runInstall(ctx context.Context) {
 
 	m.progressChan <- installProgressMsg{stage: stageVerifying}
 
-	if err := app.VerifyHTTP(ctx); err != nil {
-		if cleanupErr := app.Destroy(context.Background(), true); cleanupErr != nil {
-			slog.Error("Failed to clean up after verification failure", "app", appName, "error", cleanupErr)
-		}
+	if err := app.VerifyHTTPOrRemove(ctx); err != nil {
 		m.doneChan <- installDoneMsg{err: err}
 		return
 	}

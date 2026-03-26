@@ -45,12 +45,12 @@ func TestInstall_CustomImageFlow(t *testing.T) {
 }
 
 func TestInstall_CLIModeSkipsToHostname(t *testing.T) {
-	m := NewInstall(nil, "campfire")
+	m := NewInstall(newTestNamespace(), "campfire")
 	assert.Equal(t, installStateHostname, m.state)
 }
 
 func TestInstall_CLIModeExpandsAlias(t *testing.T) {
-	m := NewInstall(nil, "campfire")
+	m := NewInstall(newTestNamespace(), "campfire")
 	m, _ = updateInstall(m, tea.WindowSizeMsg{Width: 80, Height: 40})
 	view := ansi.Strip(m.View())
 	assert.Contains(t, view, "once-campfire.example.com")
@@ -86,7 +86,8 @@ func TestInstall_SuccessNavigatesToApp(t *testing.T) {
 }
 
 func TestInstall_FailureReturnsToHostname(t *testing.T) {
-	m := newTestInstall()
+	ns := newTestNamespace()
+	m := NewInstall(ns, "")
 	m, _ = updateInstall(m, tea.WindowSizeMsg{Width: 80, Height: 24})
 
 	// Go through known app flow to hostname
@@ -179,7 +180,7 @@ func TestInstall_BackNavigation_ImageFormBackMsg(t *testing.T) {
 }
 
 func TestInstall_EscQuitsInCLIMode(t *testing.T) {
-	m := NewInstall(nil, "ghcr.io/basecamp/once-campfire:latest")
+	m := NewInstall(newTestNamespace(), "ghcr.io/basecamp/once-campfire:latest")
 
 	_, cmd := updateInstall(m, keyPressMsg("esc"))
 	require.NotNil(t, cmd)
@@ -190,7 +191,7 @@ func TestInstall_EscQuitsInCLIMode(t *testing.T) {
 }
 
 func TestInstall_HostnameBackQuitsInCLIMode(t *testing.T) {
-	m := NewInstall(nil, "ghcr.io/basecamp/once-campfire:latest")
+	m := NewInstall(newTestNamespace(), "ghcr.io/basecamp/once-campfire:latest")
 
 	_, cmd := updateInstall(m, InstallHostnameBackMsg{})
 	require.NotNil(t, cmd)
@@ -201,7 +202,7 @@ func TestInstall_HostnameBackQuitsInCLIMode(t *testing.T) {
 }
 
 func TestInstall_ShowsLogoAndHidesTitleWhenNoApps(t *testing.T) {
-	m := NewInstall(nil, "")
+	m := NewInstall(newTestNamespace(), "")
 	m, _ = updateInstall(m, tea.WindowSizeMsg{Width: 80, Height: 40})
 
 	view := m.View()
@@ -220,7 +221,8 @@ func TestInstall_ShowsTitleAndHidesLogoWhenAppsExist(t *testing.T) {
 }
 
 func TestInstall_PullFailureReturnsToImageForm(t *testing.T) {
-	m := newTestInstall()
+	ns := newTestNamespace()
+	m := NewInstall(ns, "")
 	m, _ = updateInstall(m, tea.WindowSizeMsg{Width: 80, Height: 24})
 	m, _ = updateInstall(m, InstallCustomSelectedMsg{})
 	m, _ = updateInstall(m, InstallImageSubmitMsg{ImageRef: "bad:image"})
@@ -234,7 +236,8 @@ func TestInstall_PullFailureReturnsToImageForm(t *testing.T) {
 }
 
 func TestInstall_PullFailureReturnsToAppList(t *testing.T) {
-	m := newTestInstall()
+	ns := newTestNamespace()
+	m := NewInstall(ns, "")
 	m, _ = updateInstall(m, tea.WindowSizeMsg{Width: 80, Height: 24})
 	m, _ = updateInstall(m, InstallAppSelectedMsg{ImageRef: "ghcr.io/basecamp/once-campfire"})
 	m, _ = updateInstall(m, InstallFormSubmitMsg{ImageRef: "ghcr.io/basecamp/once-campfire", Hostname: "chat.example.com"})
@@ -247,7 +250,8 @@ func TestInstall_PullFailureReturnsToAppList(t *testing.T) {
 }
 
 func TestInstall_NonPullDeployFailureReturnsToHostname(t *testing.T) {
-	m := newTestInstall()
+	ns := newTestNamespace()
+	m := NewInstall(ns, "")
 	m, _ = updateInstall(m, tea.WindowSizeMsg{Width: 80, Height: 24})
 	m, _ = updateInstall(m, InstallAppSelectedMsg{ImageRef: "ghcr.io/basecamp/once-campfire"})
 	m, _ = updateInstall(m, InstallFormSubmitMsg{ImageRef: "ghcr.io/basecamp/once-campfire", Hostname: "chat.example.com"})
@@ -281,7 +285,8 @@ func TestInstall_UniqueHostnameAllowsInstall(t *testing.T) {
 }
 
 func TestInstall_FailureDoesNotRestartLogo(t *testing.T) {
-	noApps := NewInstall(nil, "")
+	ns := newTestNamespace()
+	noApps := NewInstall(ns, "")
 	noApps, _ = updateInstall(noApps, tea.WindowSizeMsg{Width: 80, Height: 40})
 	noApps, _ = updateInstall(noApps, InstallFormSubmitMsg{ImageRef: "ghcr.io/basecamp/once-campfire:latest", Hostname: "app.example.com"})
 	_, cmd := updateInstall(noApps, InstallActivityFailedMsg{Err: errors.New("fail")})
@@ -366,7 +371,7 @@ func TestBlockWidthEmpty(t *testing.T) {
 // Helpers
 
 func newTestInstall() Install {
-	return NewInstall(nil, "")
+	return NewInstall(newTestNamespace(), "")
 }
 
 func newTestNamespace(apps ...docker.ApplicationSettings) *docker.Namespace {

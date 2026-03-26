@@ -24,16 +24,16 @@ var (
 	ErrInvalidBackup      = errors.New("invalid backup archive")
 	ErrBackupPathRelative = errors.New("backup path must be absolute")
 	ErrSetupFailed        = errors.New("setup failed")
-	ErrPullFailed = &describedError{
+	ErrPullFailed         = &describedError{
 		msg:         "pull failed",
 		description: "Failed to download the application image. Check that the image name is correct and try again.",
 	}
-	ErrDeployFailed = errors.New("deploy failed")
+	ErrDeployFailed       = errors.New("deploy failed")
 	ErrVerificationFailed = &describedError{
 		msg:         "verification failed",
-		description: "The application did not respond to a health check after starting. It may have crashed or need longer to start up.",
+		description: "The application couldn't be verified. Please check that you have a valid DNS record set up.",
 	}
-	ErrUnpauseFailed      = errors.New("failed to unpause container after backup")
+	ErrUnpauseFailed = errors.New("failed to unpause container after backup")
 )
 
 const (
@@ -196,26 +196,12 @@ func (a *Application) Deploy(ctx context.Context, progress DeployProgressCallbac
 	return a.deployWithVolume(ctx, vol, progress)
 }
 
-func (a *Application) VerifyHTTP(ctx context.Context) error {
-	url := a.URL()
-	if url == "" {
-		return nil
-	}
-
-	client := &http.Client{Timeout: httpVerifyTimeout}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url+HealthCheckPath, nil)
-	if err != nil {
-		return fmt.Errorf("%w: %w", ErrVerificationFailed, err)
-	}
-
-	resp, err := client.Do(req)
-	if err != nil {
-		return fmt.Errorf("%w: %w", ErrVerificationFailed, err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode < 200 || resp.StatusCode > 299 {
-		return fmt.Errorf("%w: unexpected status %d from %s", ErrVerificationFailed, resp.StatusCode, url)
+func (a *Application) VerifyHTTPOrRemove(ctx context.Context) error {
+	if err := a.verifyHTTP(ctx); err != nil {
+		if cleanupErr := a.Remove(context.Background(), true); cleanupErr != nil {
+			slog.Error("Failed to clean up after verification failure", "app", a.Settings.Name, "error", cleanupErr)
+		}
+		return err
 	}
 
 	return nil
@@ -382,26 +368,29 @@ func (a *Application) deployWithVolume(ctx context.Context, vol *ApplicationVolu
 	return nil
 }
 
-func (a *Application) volumeMounts(vol *ApplicationVolume) []mount.Mount {
-	var mounts []mount.Mount
-	for _, target := range AppVolumeMountTargets {
-		mounts = append(mounts, mount.Mount{
-			Type:   mount.TypeVolume,
-			Source: vol.Name(),
-			Target: target,
-		})
+func (a *Application) verifyHTTP(ctx context.Context) error {
+	url := a.URL()
+	if url == "" {
+		return nil
 	}
-	return mounts
-}
 
-func (a *Application) containerConfig(env []string) *container.Config {
-	return &container.Config{
-		Image: a.Settings.Image,
-		Labels: map[string]string{
-			labelKey: a.Settings.Marshal(),
-		},
-		Env: env,
+	client := &http.Client{Timeout: httpVerifyTimeout}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url+HealthCheckPath, nil)
+	if err != nil {
+		return fmt.Errorf("%w: %w", ErrVerificationFailed, err)
 	}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return fmt.Errorf("%w: %w", ErrVerificationFailed, err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode > 299 {
+		return fmt.Errorf("%w: unexpected status %d from %s", ErrVerificationFailed, resp.StatusCode, url)
+	}
+
+	return nil
 }
 
 func (a *Application) removeContainersExcept(ctx context.Context, keep string) error {
@@ -423,4 +412,26 @@ func (a *Application) removeContainersExcept(ctx context.Context, keep string) e
 	}
 
 	return nil
+}
+
+func (a *Application) volumeMounts(vol *ApplicationVolume) []mount.Mount {
+	var mounts []mount.Mount
+	for _, target := range AppVolumeMountTargets {
+		mounts = append(mounts, mount.Mount{
+			Type:   mount.TypeVolume,
+			Source: vol.Name(),
+			Target: target,
+		})
+	}
+	return mounts
+}
+
+func (a *Application) containerConfig(env []string) *container.Config {
+	return &container.Config{
+		Image: a.Settings.Image,
+		Labels: map[string]string{
+			labelKey: a.Settings.Marshal(),
+		},
+		Env: env,
+	}
 }

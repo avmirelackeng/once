@@ -61,29 +61,20 @@ func (d *deployCommand) run(ctx context.Context, ns *docker.Namespace, cmd *cobr
 
 	app := docker.NewApplication(ns, settings)
 
-	progress := func(p docker.DeployProgress) {
-		switch p.Stage {
-		case docker.DeployStageDownloading:
-			fmt.Printf("Downloading: %d%%\n", p.Percentage)
-		case docker.DeployStageStarting:
-			fmt.Println("Starting...")
-		case docker.DeployStageFinished:
-			fmt.Println("Finished")
+	p := newCLIProgress("Deploying "+host, func(progress docker.DeployProgressCallback) error {
+		if err := app.Deploy(ctx, progress); err != nil {
+			if cleanupErr := app.Destroy(context.Background(), true); cleanupErr != nil {
+				slog.Error("Failed to clean up after deploy failure", "app", name, "error", cleanupErr)
+			}
+			return fmt.Errorf("%w: %w", docker.ErrDeployFailed, err)
 		}
-	}
 
-	if err := app.Deploy(ctx, progress); err != nil {
-		if cleanupErr := app.Destroy(context.Background(), true); cleanupErr != nil {
-			slog.Error("Failed to clean up after deploy failure", "app", name, "error", cleanupErr)
+		if err := app.VerifyHTTPOrRemove(ctx); err != nil {
+			return err
 		}
-		return fmt.Errorf("%w: %w", docker.ErrDeployFailed, err)
-	}
 
-	fmt.Println("Verifying...")
-	if err := app.VerifyHTTPOrRemove(ctx); err != nil {
-		return err
-	}
+		return nil
+	})
 
-	fmt.Printf("Deployed %s\n", name)
-	return nil
+	return p.Run()
 }
